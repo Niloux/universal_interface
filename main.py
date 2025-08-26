@@ -1,5 +1,10 @@
+from utils.config import Config
+
+
 def main():
-    print("Hello from universal-interface!")
+    config = Config()
+    print(config.config)
+    print(config.get("camera"))
 
 
 if __name__ == "__main__":
