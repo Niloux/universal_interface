@@ -9,3 +9,4 @@ output:
 
 process:
   ego_pose: true
+  camera: true

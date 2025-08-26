@@ -8,6 +8,7 @@ from typing import Dict, List, Type
 from utils.config import Config
 
 from .base import BaseProcessor
+from .camera import CameraProcessor
 from .ego_pose import EgoPoseProcessor
 
 
@@ -21,8 +22,8 @@ class ProcessorFactory:
     # 注册的处理器类型映射
     _processors: Dict[str, Type[BaseProcessor]] = {
         "ego_pose": EgoPoseProcessor,
+        "camera": CameraProcessor,
         # 可以在这里添加更多处理器类型
-        # "camera": CameraProcessor,
         # "lidar": LidarProcessor,
     }
 
