@@ -2,10 +2,10 @@ camera:
   ["FRONT", "FRONT_LEFT", "FRONT_RIGHT", "SIDE_LEFT", "SIDE_RIGHT"]
 
 input:
-  "/Users/wuyou/Works/universal_interface/input"
+  "/home/saimo/wuyou/universal_interface/input"
 
 output:
-  "/Users/wuyou/Works/universal_interface/test"
+  "/home/saimo/wuyou/universal_interface/test"
 
 process:
   ego_pose: true
