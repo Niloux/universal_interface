@@ -13,6 +13,7 @@ track_vis.mp4
 """
 
 import json
+import math
 import os
 import pickle
 from typing import Any, Dict, Optional
@@ -191,6 +192,61 @@ class TrackProcessor(BaseProcessor):
                 )
                 track_vis_imgs.append(track_vis_img)
 
+        # 处理trajectory数据
+        trajectory_info = {}
+        for track_id, info in trajectory.items():
+            if len(info) < 2:
+                continue
+            trajectory_info[track_id] = {}
+
+            dims = []
+            frames = []
+            timestamps = []
+            poses_vehicle = []  # 主车坐标系
+            speeds = []
+
+            for frame_name, box in info.items():
+                dims.append([box["height"], box["width"], box["length"]])
+                frames.append(int(frame_name))
+                timestamps.append(self._load_timestamp(int(frame_name)))
+                speeds.append(box["speed"])
+
+                pose_vehicle = np.eye(4)
+                pose_vehicle[:3, :3] = np.array([
+                    [math.cos(box["heading"]), -math.sin(box["heading"]), 0],
+                    [math.sin(box["heading"]), math.cos(box["heading"]), 0],
+                    [0, 0, 1],
+                ])
+                pose_vehicle[:3, 3] = np.array([
+                    box["center_x"],
+                    box["center_y"],
+                    box["center_z"],
+                ])
+                poses_vehicle.append(pose_vehicle.astype(np.float32))
+
+            dims = np.array(dims).astype(np.float32)
+            dim = np.max(dims, axis=0)
+            poses_vehicle = np.array(poses_vehicle).astype(np.float32)
+
+            # 计算是否动态
+            positions = poses_vehicle[:, :3, 3]
+            distance = np.linalg.norm(positions[0] - positions[-1])
+            dynamic = np.any(np.std(positions, axis=0) > 0.5) or distance > 2
+
+            trajectory_info[track_id] = {
+                "label": info[list(info.keys())[0]]["label"],
+                "height": dim[0],
+                "width": dim[1],
+                "length": dim[2],
+                "poses_vehicle": poses_vehicle,
+                "timestamps": timestamps,
+                "frames": frames,
+                "speeds": speeds,
+                "symmetric": info[list(info.keys())[0]]["label"] != "pedestrain",
+                "deformable": info[list(info.keys())[0]]["label"] == "pedestrain",
+                "stationary": not dynamic,
+            }
+
         if track_vis_imgs:
             imageio.mimwrite(
                 os.path.join(self.output_path, "track_vis.mp4"), track_vis_imgs, fps=24
@@ -203,6 +259,8 @@ class TrackProcessor(BaseProcessor):
             os.path.join(self.output_path, "track_camera_visible.pkl"), "wb"
         ) as f:
             pickle.dump(track_camera_visible, f)
+        with open(os.path.join(self.output_path, "trajectory.pkl"), "wb") as f:
+            pickle.dump(trajectory_info, f)
 
     def _check_camera_visible(
         self,
