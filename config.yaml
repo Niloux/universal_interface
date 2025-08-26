@@ -10,3 +10,4 @@ output:
 process:
   ego_pose: true
   camera: true
+  track: true

@@ -10,6 +10,7 @@ from utils.config import Config
 from .base import BaseProcessor
 from .camera import CameraProcessor
 from .ego_pose import EgoPoseProcessor
+from .track import TrackProcessor
 
 
 class ProcessorFactory:
@@ -23,6 +24,7 @@ class ProcessorFactory:
     _processors: Dict[str, Type[BaseProcessor]] = {
         "ego_pose": EgoPoseProcessor,
         "camera": CameraProcessor,
+        "track": TrackProcessor,
         # 可以在这里添加更多处理器类型
         # "lidar": LidarProcessor,
     }

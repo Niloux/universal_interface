@@ -4,9 +4,13 @@
 所有具体的数据处理器都应该继承BaseProcessor类。
 """
 
+import json
 import os
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, Dict, List
+
+import cv2
+import numpy as np
 
 from utils.config import Config
 
@@ -85,3 +89,73 @@ class BaseProcessor(ABC):
             目录存在返回True，否则返回False
         """
         return os.path.exists(path) and os.path.isdir(path)
+
+    def _load_ego_pose(self, frame_id: int) -> np.array:
+        """
+        加载指定帧的ego pose数据
+        """
+        path = os.path.join(self.config["output"], "ego_pose", f"{frame_id:06d}.txt")
+        return np.loadtxt(path)
+
+    def _load_extrinsics(self) -> np.array:
+        """
+        加载相机外参
+        """
+        camera_names = []
+        path = os.path.join(self.config["output"], "extrinsics")
+        for f in os.listdir(path):
+            if f.endswith(".txt"):
+                camera_names.append(f.split(".")[0])
+        extrinsics = {}
+        for camera_name in camera_names:
+            extrinsics[camera_name] = np.loadtxt(
+                os.path.join(path, f"{camera_name}.txt")
+            )
+        return extrinsics
+
+    def _load_intrinsics(self) -> np.array:
+        """
+        加载相机内参
+        """
+        camera_names = []
+        path = os.path.join(self.config["output"], "intrinsics")
+        for f in os.listdir(path):
+            if f.endswith(".txt"):
+                camera_names.append(f.split(".")[0])
+        intrinsics = {}
+        for camera_name in camera_names:
+            intrinsics_file = os.path.join(path, f"{camera_name}.txt")
+            with open(intrinsics_file, "r") as f:
+                values = [float(line.strip()) for line in f.readlines()]
+            fx, fy, cx, cy = values[:4]
+            intrinsics[camera_name] = np.array([
+                [fx, 0, cx],
+                [0, fy, cy],
+                [0, 0, 1],
+            ])
+        return intrinsics
+
+    def _load_images(self, frame_id: int) -> Dict[str, Any]:
+        """
+        加载指定帧的图像数据
+        """
+        path = os.path.join(self.config["output"], "images")
+        images = {}
+        for i in os.listdir(path):
+            if i.endswith(".png") and int(i.split(".")[0].split("_")[0]) == frame_id:
+                images[i.split(".")[0].split("_")[-1]] = cv2.imread(
+                    os.path.join(path, i)
+                )
+        return images
+
+    def _load_timestamp(self, frame_id: int) -> str:
+        """
+        加载指定帧的时间戳
+        """
+        path = os.path.join(self.config["input"], "sequence_info.json")
+        with open(path, "r") as f:
+            data = json.load(f)
+        for i in data:
+            if int(i.get("frame_id").strip("_")[-1]) == frame_id:
+                return i.get("timestamp")
+        return None
