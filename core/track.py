@@ -84,7 +84,6 @@ class TrackProcessor(BaseProcessor):
             track_info[frame_name] = {}
             track_camera_visible[frame_name] = {camera_id: [] for camera_id in CAMERA}
 
-            ego_pose = self._load_ego_pose(frame_id)
             images = self._load_images(frame_id)
             extrinsics = self._load_extrinsics()
             intrinsics = self._load_intrinsics()
@@ -203,6 +202,7 @@ class TrackProcessor(BaseProcessor):
             frames = []
             timestamps = []
             poses_vehicle = []  # 主车坐标系
+            poses_world = []  # 世界坐标系
             speeds = []
 
             for frame_name, box in info.items():
@@ -222,14 +222,18 @@ class TrackProcessor(BaseProcessor):
                     box["center_y"],
                     box["center_z"],
                 ])
+                ego_pose = self._load_ego_pose(int(frame_name))
+                pose_world = np.matmul(ego_pose, pose_vehicle)
                 poses_vehicle.append(pose_vehicle.astype(np.float32))
+                poses_world.append(pose_world.astype(np.float32))
 
             dims = np.array(dims).astype(np.float32)
             dim = np.max(dims, axis=0)
             poses_vehicle = np.array(poses_vehicle).astype(np.float32)
+            poses_world = np.array(poses_world).astype(np.float32)
 
             # 计算是否动态
-            positions = poses_vehicle[:, :3, 3]
+            positions = poses_world[:, :3, 3]
             distance = np.linalg.norm(positions[0] - positions[-1])
             dynamic = np.any(np.std(positions, axis=0) > 0.5) or distance > 2
 
