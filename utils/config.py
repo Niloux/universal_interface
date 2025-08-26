@@ -38,3 +38,8 @@ class Config:
     def __getitem__(self, key: str) -> Any:
         """获取配置项"""
         return self._config[key]
+
+    def is_enable(self, key: str) -> bool:
+        """检查配置项是否启用"""
+        process = self.config.get("process", {})
+        return process.get(key, False)

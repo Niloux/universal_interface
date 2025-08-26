@@ -1,2 +1,8 @@
 camera:
   ["FRONT", "FRONT_LEFT", "FRONT_RIGHT", "SIDE_LEFT", "SIDE_RIGHT"]
+
+input:
+  "/Users/wuyou/Works/universal_interface/input"
+
+process:
+  ego_pose: true
