@@ -4,5 +4,8 @@ camera:
 input:
   "/Users/wuyou/Works/universal_interface/input"
 
+output:
+  "/Users/wuyou/Works/universal_interface/test"
+
 process:
   ego_pose: true
