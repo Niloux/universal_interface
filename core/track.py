@@ -108,7 +108,7 @@ class TrackProcessor(BaseProcessor):
                 )
 
             if all(cam_id in images for cam_id in ["0", "1", "2"]):
-                vis_img = np.concatenate([images["0"], images["1"], images["2"]], axis=1)
+                vis_img = np.concatenate([images["1"], images["0"], images["2"]], axis=1)
                 track_vis_imgs.append(vis_img)
 
         return {

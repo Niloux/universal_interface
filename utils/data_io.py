@@ -56,15 +56,14 @@ def load_intrinsics(output_path: Path, camera_ids: List[str]) -> Dict[str, np.nd
     return intrinsics
 
 
-def load_images(
-    image_path: Path, frame_name: str, camera_ids: List[str]
-) -> Dict[str, np.ndarray]:
+def load_images(image_path: Path, frame_name: str, camera_ids: List[str]) -> Dict[str, np.ndarray]:
     """加载指定帧的所有相机图像"""
     images = {}
     for camera_id in camera_ids:
         img_path = image_path / f"{frame_name}_{camera_id}.png"
         if img_path.exists():
-            images[camera_id] = cv2.imread(str(img_path))
+            img_bgr = cv2.imread(str(img_path))
+            images[camera_id] = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)  # BGR->RGB，保持连续
     return images
 
 
