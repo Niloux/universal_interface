@@ -11,3 +11,4 @@ process:
   ego_pose: true
   camera: true
   track: true
+  dynamic_mask: true

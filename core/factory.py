@@ -9,6 +9,7 @@ from utils.config import Config
 
 from .base import BaseProcessor
 from .camera import CameraProcessor
+from .dynamic_mask import DynamicMaskProcessor
 from .ego_pose import EgoPoseProcessor
 from .track import TrackProcessor
 
@@ -25,6 +26,7 @@ class ProcessorFactory:
         "ego_pose": EgoPoseProcessor,
         "camera": CameraProcessor,
         "track": TrackProcessor,
+        "dynamic_mask": DynamicMaskProcessor,
         # 可以在这里添加更多处理器类型
         # "lidar": LidarProcessor,
     }
