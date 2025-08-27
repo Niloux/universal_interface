@@ -24,6 +24,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .base import BaseProcessor
+from utils import data_io
 
 CAMERA = ["0", "1", "2", "3", "4"]
 
@@ -43,9 +44,11 @@ class TrackProcessor(BaseProcessor):
             config: 配置字典
         """
         super().__init__(config)
-
-        self.input_path = os.path.join(self.config["input"], "objects")
-        self.output_path = os.path.join(self.config["output"], "track")
+        self.raw_input_path = self.config["input"]
+        self.output_root_path = self.config["output"]
+        self.input_path = os.path.join(self.raw_input_path, "objects")
+        self.output_path = os.path.join(self.output_root_path, "track")
+        self.image_output_path = os.path.join(self.output_root_path, "images")
 
         self.ensure_dir(self.output_path)
 
@@ -75,6 +78,9 @@ class TrackProcessor(BaseProcessor):
         object_ids = {}
         track_vis_imgs = []
 
+        extrinsics = data_io.load_extrinsics(self.output_root_path)
+        intrinsics = data_io.load_intrinsics(self.output_root_path)
+
         for frame_id, f in enumerate(tqdm(sorted(os.listdir(self.input_path)))):
             object_file = os.path.join(self.input_path, f)
             with open(object_file, "r") as f:
@@ -84,9 +90,7 @@ class TrackProcessor(BaseProcessor):
             track_info[frame_name] = {}
             track_camera_visible[frame_name] = {camera_id: [] for camera_id in CAMERA}
 
-            images = self._load_images(frame_id)
-            extrinsics = self._load_extrinsics()
-            intrinsics = self._load_intrinsics()
+            images = data_io.load_images(self.image_output_path, frame_name)
 
             for j in data:
                 track_id = j.get("track_id")
@@ -108,7 +112,7 @@ class TrackProcessor(BaseProcessor):
                     "heading": j.get("box3d_heading"),
                     "label": label,
                     "speed": 0.0,
-                    "timestamp": self._load_timestamp(frame_id),
+                    "timestamp": data_io.load_timestamp(self.raw_input_path, frame_id),
                 }
 
                 # 保存track_info
@@ -208,7 +212,7 @@ class TrackProcessor(BaseProcessor):
             for frame_name, box in info.items():
                 dims.append([box["height"], box["width"], box["length"]])
                 frames.append(int(frame_name))
-                timestamps.append(self._load_timestamp(int(frame_name)))
+                timestamps.append(data_io.load_timestamp(self.raw_input_path, int(frame_name)))
                 speeds.append(box["speed"])
 
                 pose_vehicle = np.eye(4)
@@ -222,7 +226,7 @@ class TrackProcessor(BaseProcessor):
                     box["center_y"],
                     box["center_z"],
                 ])
-                ego_pose = self._load_ego_pose(int(frame_name))
+                ego_pose = data_io.load_ego_pose(self.output_root_path, int(frame_name))
                 pose_world = np.matmul(ego_pose, pose_vehicle)
                 poses_vehicle.append(pose_vehicle.astype(np.float32))
                 poses_world.append(pose_world.astype(np.float32))

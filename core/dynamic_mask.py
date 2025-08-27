@@ -7,7 +7,6 @@ Dynamic Mask数据处理模块
 """
 
 import os
-import pickle
 from typing import Any, Dict
 
 import cv2
@@ -15,7 +14,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .base import BaseProcessor
-from utils import default_logger
+from utils import default_logger, data_io
 
 # 相机ID列表
 CAMERA_IDS = ["0", "1", "2", "3", "4"]
@@ -56,15 +55,15 @@ class DynamicMaskProcessor(BaseProcessor):
             default_logger.info("开始生成动态物体掩码...")
 
             # 1. 加载所需数据
-            trajectory_data = self._load_pickle(os.path.join(self.track_output_path, "trajectory.pkl"))
-            track_info_data = self._load_pickle(os.path.join(self.track_output_path, "track_info.pkl"))
+            trajectory_data = data_io.load_pickle(os.path.join(self.track_output_path, "trajectory.pkl"))
+            track_info_data = data_io.load_pickle(os.path.join(self.track_output_path, "track_info.pkl"))
 
             if not trajectory_data or not track_info_data:
                 default_logger.warning("缺少轨迹或跟踪信息文件，跳过动态掩码生成。")
                 return False
 
-            extrinsics = self._load_extrinsics()
-            intrinsics = self._load_intrinsics()
+            extrinsics = data_io.load_extrinsics(self.output_path)
+            intrinsics = data_io.load_intrinsics(self.output_path)
 
             # 2. 识别所有动态物体的track_id
             dynamic_track_ids = {
@@ -78,7 +77,7 @@ class DynamicMaskProcessor(BaseProcessor):
             frame_names = sorted(track_info_data.keys())
             for frame_name in tqdm(frame_names, desc="生成动态掩码"):
                 frame_objects = track_info_data[frame_name]
-                images = self._load_images(frame_name)
+                images = data_io.load_images(self.image_output_path, frame_name)
 
                 for camera_id in CAMERA_IDS:
                     # 动态获取图像尺寸
@@ -192,40 +191,3 @@ class DynamicMaskProcessor(BaseProcessor):
         corners[2, :] += cz
 
         return corners.T
-
-    def _load_images(self, frame_name: str) -> Dict[str, np.ndarray]:
-        """加载指定帧的所有相机图像"""
-        images = {}
-        for camera_id in CAMERA_IDS:
-            img_path = os.path.join(self.image_output_path, f"{frame_name}_{camera_id}.png")
-            if os.path.exists(img_path):
-                images[camera_id] = cv2.imread(img_path)
-        return images
-
-    def _load_pickle(self, file_path: str) -> Any:
-        """加载pickle文件"""
-        if not os.path.exists(file_path):
-            default_logger.error(f"文件不存在: {file_path}")
-            return None
-        with open(file_path, "rb") as f:
-            return pickle.load(f)
-
-    def _load_extrinsics(self) -> Dict[str, np.ndarray]:
-        """加载所有相机的外参"""
-        extrinsics = {}
-        for camera_id in CAMERA_IDS:
-            ext_path = os.path.join(self.output_path, "extrinsics", f"{camera_id}.txt")
-            if os.path.exists(ext_path):
-                extrinsics[camera_id] = np.loadtxt(ext_path)
-        return extrinsics
-
-    def _load_intrinsics(self) -> Dict[str, np.ndarray]:
-        """加载所有相机的内参"""
-        intrinsics = {}
-        for camera_id in CAMERA_IDS:
-            int_path = os.path.join(self.output_path, "intrinsics", f"{camera_id}.txt")
-            if os.path.exists(int_path):
-                params = np.loadtxt(int_path)
-                fx, fy, cx, cy = params[0], params[1], params[2], params[3]
-                intrinsics[camera_id] = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
-        return intrinsics
