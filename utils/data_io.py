@@ -32,7 +32,7 @@ def load_extrinsics(output_path: Path, camera_ids: List[str]) -> Dict[str, np.nd
     ext_path_dir = output_path / "extrinsics"
     if not ext_path_dir.exists():
         return extrinsics
-        
+
     for camera_id in camera_ids:
         ext_path = ext_path_dir / f"{camera_id}.txt"
         if ext_path.exists():
@@ -56,7 +56,9 @@ def load_intrinsics(output_path: Path, camera_ids: List[str]) -> Dict[str, np.nd
     return intrinsics
 
 
-def load_images(image_path: Path, frame_name: str, camera_ids: List[str]) -> Dict[str, np.ndarray]:
+def load_images(
+    image_path: Path, frame_name: str, camera_ids: List[str]
+) -> Dict[str, np.ndarray]:
     """加载指定帧的所有相机图像"""
     images = {}
     for camera_id in camera_ids:
@@ -73,7 +75,7 @@ def load_ego_pose(output_path: Path, frame_id: int) -> np.ndarray:
     path = output_path / "ego_pose" / f"{frame_id:06d}.txt"
     if path.exists():
         return np.loadtxt(path)
-    return np.eye(4) # 返回默认单位矩阵
+    return np.eye(4)  # 返回默认单位矩阵
 
 
 def load_timestamp(input_path: Path, frame_id: int) -> int:

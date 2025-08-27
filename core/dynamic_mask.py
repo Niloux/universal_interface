@@ -55,7 +55,9 @@ class DynamicMaskProcessor(BaseProcessor):
 
             # 1. 加载所需数据
             trajectory_data: Dict[str, TrajectoryData] = data_io.load_pickle(self.track_output_path / "trajectory.pkl")
-            track_info_data: Dict[str, Dict[str, FrameObject]] = data_io.load_pickle(self.track_output_path / "track_info.pkl")
+            track_info_data: Dict[str, Dict[str, FrameObject]] = data_io.load_pickle(
+                self.track_output_path / "track_info.pkl"
+            )
 
             if not trajectory_data or not track_info_data:
                 default_logger.warning("缺少轨迹或跟踪信息文件，跳过动态掩码生成。")
@@ -65,11 +67,7 @@ class DynamicMaskProcessor(BaseProcessor):
             intrinsics = data_io.load_intrinsics(self.output_path, self.camera_ids)
 
             # 2. 识别所有动态物体的track_id
-            dynamic_track_ids = {
-                track_id
-                for track_id, data in trajectory_data.items()
-                if not data.stationary
-            }
+            dynamic_track_ids = {track_id for track_id, data in trajectory_data.items() if not data.stationary}
             default_logger.info(f"共识别出 {len(dynamic_track_ids)} 个动态物体。")
 
             # 3. 逐帧生成掩码
@@ -100,7 +98,10 @@ class DynamicMaskProcessor(BaseProcessor):
 
                             # 投影3D框到2D图像
                             visible, pts_2d = geometry.project_box_to_image(
-                                box_info, extrinsics[camera_id], intrinsics[camera_id], img_shape
+                                box_info,
+                                extrinsics[camera_id],
+                                intrinsics[camera_id],
+                                img_shape,
                             )
 
                             # 如果投影点有效，则在掩码上绘制填充多边形
@@ -120,5 +121,6 @@ class DynamicMaskProcessor(BaseProcessor):
         except Exception as e:
             default_logger.error(f"生成动态掩码时发生错误: {e}")
             import traceback
+
             traceback.print_exc()
             return False

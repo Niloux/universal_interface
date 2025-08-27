@@ -66,7 +66,7 @@ class TrackProcessor(BaseProcessor):
         processed_frames = self._process_frames()
 
         default_logger.info("第二步: 计算最终轨迹信息...")
-        trajectory_info = self._calculate_final_trajectories(processed_frames['trajectory'])
+        trajectory_info = self._calculate_final_trajectories(processed_frames["trajectory"])
 
         default_logger.info("第三步: 保存处理结果...")
         self._save_results(processed_frames, trajectory_info)
@@ -103,18 +103,20 @@ class TrackProcessor(BaseProcessor):
                     trajectory[track_id] = {}
                 trajectory[track_id][frame_name] = box_info
 
-                self._update_camera_visibility(track_camera_visible[frame_name], images, extrinsics, intrinsics, box_info, track_id)
+                self._update_camera_visibility(
+                    track_camera_visible[frame_name], images, extrinsics, intrinsics, box_info, track_id
+                )
 
             if all(cam_id in images for cam_id in ["0", "1", "2"]):
                 vis_img = np.concatenate([images["0"], images["1"], images["2"]], axis=1)
                 track_vis_imgs.append(vis_img)
-        
+
         return {
             "track_info": track_info,
             "track_camera_visible": track_camera_visible,
             "trajectory": trajectory,
             "object_ids": object_ids,
-            "vis_images": track_vis_imgs
+            "vis_images": track_vis_imgs,
         }
 
     def _extract_box_info(self, obj_data: Dict, frame_id: int) -> Box3D:
@@ -122,8 +124,12 @@ class TrackProcessor(BaseProcessor):
         center = obj_data.get("box3d_center")
         size = obj_data.get("box3d_size")
         return Box3D(
-            height=size[2], width=size[1], length=size[0],
-            center_x=center[0], center_y=center[1], center_z=center[2],
+            height=size[2],
+            width=size[1],
+            length=size[0],
+            center_x=center[0],
+            center_y=center[1],
+            center_z=center[2],
             heading=obj_data.get("box3d_heading"),
             label=self._map_category(obj_data.get("label")),
             speed=0.0,
@@ -138,9 +144,7 @@ class TrackProcessor(BaseProcessor):
             if cam_id not in extrinsics or cam_id not in intrinsics:
                 continue
 
-            visible, pts_2d = geometry.project_box_to_image(
-                box_info, extrinsics[cam_id], intrinsics[cam_id], img_shape
-            )
+            visible, pts_2d = geometry.project_box_to_image(box_info, extrinsics[cam_id], intrinsics[cam_id], img_shape)
 
             if visible:
                 visibility_dict[cam_id].append(track_id)
@@ -150,8 +154,18 @@ class TrackProcessor(BaseProcessor):
     def _draw_3d_box(self, image: np.ndarray, pts_2d: np.ndarray):
         """在图像上绘制3D边界框"""
         for i, j in [
-            [0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4],
-            [0, 4], [1, 5], [2, 6], [3, 7],
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 0],
+            [4, 5],
+            [5, 6],
+            [6, 7],
+            [7, 4],
+            [0, 4],
+            [1, 5],
+            [2, 6],
+            [3, 7],
         ]:
             pt1, pt2 = tuple(pts_2d[i].astype(int)), tuple(pts_2d[j].astype(int))
             cv2.line(image, pt1, pt2, (255, 0, 0), 2)
@@ -165,7 +179,7 @@ class TrackProcessor(BaseProcessor):
 
             frames = sorted(info.keys(), key=int)
             first_box = info[frames[0]]
-            
+
             poses_vehicle, poses_world, dims, timestamps, speeds = [], [], [], [], []
 
             for frame_name in frames:
@@ -175,11 +189,13 @@ class TrackProcessor(BaseProcessor):
                 speeds.append(box.speed)
 
                 pose_vehicle = np.eye(4)
-                pose_vehicle[:3, :3] = np.array([
-                    [math.cos(box.heading), -math.sin(box.heading), 0],
-                    [math.sin(box.heading), math.cos(box.heading), 0],
-                    [0, 0, 1],
-                ])
+                pose_vehicle[:3, :3] = np.array(
+                    [
+                        [math.cos(box.heading), -math.sin(box.heading), 0],
+                        [math.sin(box.heading), math.cos(box.heading), 0],
+                        [0, 0, 1],
+                    ]
+                )
                 pose_vehicle[:3, 3] = np.array([box.center_x, box.center_y, box.center_z])
                 ego_pose = data_io.load_ego_pose(self.output_root_path, int(frame_name))
                 poses_vehicle.append(pose_vehicle.astype(np.float32))
@@ -192,9 +208,13 @@ class TrackProcessor(BaseProcessor):
 
             trajectory_info[track_id] = TrajectoryData(
                 label=first_box.label,
-                height=dim[0], width=dim[1], length=dim[2],
+                height=dim[0],
+                width=dim[1],
+                length=dim[2],
                 poses_vehicle=np.array(poses_vehicle),
-                timestamps=timestamps, frames=[int(f) for f in frames], speeds=speeds,
+                timestamps=timestamps,
+                frames=[int(f) for f in frames],
+                speeds=speeds,
                 symmetric=first_box.label != "pedestrian",
                 deformable=first_box.label == "pedestrian",
                 stationary=not dynamic,
@@ -203,14 +223,14 @@ class TrackProcessor(BaseProcessor):
 
     def _save_results(self, processed_frames: Dict, trajectory_info: Dict):
         """保存所有处理结果到文件"""
-        if processed_frames['vis_images']:
-            imageio.mimwrite(str(self.output_path / "track_vis.mp4"), processed_frames['vis_images'], fps=24)
+        if processed_frames["vis_images"]:
+            imageio.mimwrite(str(self.output_path / "track_vis.mp4"), processed_frames["vis_images"], fps=24)
 
         with open(self.output_path / "track_info.pkl", "wb") as f:
-            pickle.dump(processed_frames['track_info'], f)
+            pickle.dump(processed_frames["track_info"], f)
         with open(self.output_path / "track_ids.json", "w") as f:
-            json.dump(processed_frames['object_ids'], f, indent=4)
+            json.dump(processed_frames["object_ids"], f, indent=4)
         with open(self.output_path / "track_camera_visible.pkl", "wb") as f:
-            pickle.dump(processed_frames['track_camera_visible'], f)
+            pickle.dump(processed_frames["track_camera_visible"], f)
         with open(self.output_path / "trajectory.pkl", "wb") as f:
             pickle.dump(trajectory_info, f)

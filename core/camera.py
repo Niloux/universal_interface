@@ -46,9 +46,7 @@ class CameraProcessor(BaseProcessor):
         self.images_path = self.input_path / "images"
         self.metadata_path = self.input_path / "images_metadata"
 
-        default_logger.info(
-            f"初始化相机处理器，支持 {len(self.camera_positions)} 个相机位置"
-        )
+        default_logger.info(f"初始化相机处理器，支持 {len(self.camera_positions)} 个相机位置")
 
     def process(self) -> bool:
         """
@@ -82,9 +80,7 @@ class CameraProcessor(BaseProcessor):
             default_logger.error(f"相机数据处理失败: {e}")
             return False
 
-    def _generate_camera_params(
-        self, intrinsics_output_dir: Path, extrinsics_output_dir: Path
-    ):
+    def _generate_camera_params(self, intrinsics_output_dir: Path, extrinsics_output_dir: Path):
         """
         生成相机参数文件
 

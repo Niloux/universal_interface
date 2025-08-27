@@ -10,6 +10,7 @@ from core.camera import CameraProcessor
 from core.track import TrackProcessor
 from core.dynamic_mask import DynamicMaskProcessor
 
+
 def main() -> int:
     """主函数：按顺序执行所有数据处理任务"""
     try:
@@ -39,6 +40,7 @@ def main() -> int:
     except Exception as e:
         default_logger.error(f"程序执行失败: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

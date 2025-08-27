@@ -24,18 +24,19 @@ def get_box_corners_3d(box_info: Box3D) -> np.ndarray:
     x_corners = np.array([l, l, -l, -l, l, l, -l, -l])
     y_corners = np.array([-w, w, w, -w, -w, w, w, -w])
     z_corners = np.array([-h, -h, -h, -h, h, h, h, h])
-    
+
     corners = np.vstack([x_corners, y_corners, z_corners])
 
     cos_h, sin_h = np.cos(box_info.heading), np.sin(box_info.heading)
     rotation_matrix = np.array([[cos_h, -sin_h, 0], [sin_h, cos_h, 0], [0, 0, 1]])
-    
+
     corners = rotation_matrix @ corners
     corners[0, :] += box_info.center_x
     corners[1, :] += box_info.center_y
     corners[2, :] += box_info.center_z
 
     return corners.T
+
 
 def transform_to_camera(points: np.ndarray, extrinsics: np.ndarray) -> np.ndarray:
     """
@@ -55,7 +56,10 @@ def transform_to_camera(points: np.ndarray, extrinsics: np.ndarray) -> np.ndarra
     points_camera_homo = (extrinsics_inv @ points_homo.T).T
     return points_camera_homo[:, :3]
 
-def project_to_2d(points_3d: np.ndarray, intrinsics: np.ndarray) -> Optional[np.ndarray]:
+
+def project_to_2d(
+    points_3d: np.ndarray, intrinsics: np.ndarray
+) -> Optional[np.ndarray]:
     """
     将3D点投影到2D图像平面
 
@@ -75,6 +79,7 @@ def project_to_2d(points_3d: np.ndarray, intrinsics: np.ndarray) -> Optional[np.
         return points_2d
     except Exception:
         return None
+
 
 def project_box_to_image(
     box_info: Box3D,
@@ -110,7 +115,7 @@ def project_box_to_image(
         img_height, img_width = img_shape
         x_in_range = (pts_2d[:, 0] >= 0) & (pts_2d[:, 0] < img_width)
         y_in_range = (pts_2d[:, 1] >= 0) & (pts_2d[:, 1] < img_height)
-        
+
         visible = bool(np.any(x_in_range & y_in_range))
 
         return visible, pts_2d.astype(int) if visible else None

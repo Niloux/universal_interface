@@ -12,6 +12,7 @@ import numpy as np
 @dataclass
 class Box3D:
     """代表一个3D边界框的数据结构"""
+
     height: float
     width: float
     length: float
@@ -27,6 +28,7 @@ class Box3D:
 @dataclass
 class TrajectoryData:
     """代表一条完整轨迹的数据结构"""
+
     label: Optional[str]
     height: float
     width: float
@@ -43,6 +45,6 @@ class TrajectoryData:
 @dataclass
 class FrameObject:
     """代表某一帧中的一个被跟踪的物体"""
-    lidar_box: Box3D
-    camera_box: Box3D # 在这个项目中，两者是相同的
 
+    lidar_box: Box3D
+    camera_box: Box3D  # 在这个项目中，两者是相同的

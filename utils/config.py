@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 class CameraConfig:
     """封装相机相关的配置"""
+
     def __init__(self, camera_dict: Dict[str, Any]):
         self.positions: List[str] = camera_dict.get("positions", [])
         self.id_map: Dict[str, int] = camera_dict.get("id_map", {})
@@ -34,7 +35,7 @@ class Config:
 
         Args:
             path: 配置文件路径。如果为None，则默认加载项目根目录下的 'config.yaml'。
-        
+
         Raises:
             FileNotFoundError: 如果配置文件不存在。
             ValueError: 如果缺少必要的配置项。
