@@ -24,7 +24,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .base import BaseProcessor
-from utils import data_io
+from utils import data_io, geometry
 
 CAMERA = ["0", "1", "2", "3", "4"]
 
@@ -133,9 +133,12 @@ class TrackProcessor(BaseProcessor):
                     if camera_id in images:
                         img_shape = images[camera_id].shape[:2]  # (height, width)
 
-                    visible, pts_2d = self._check_camera_visible(
-                        box_info, camera_id, extrinsics, intrinsics, img_shape
-                    )
+                    if camera_id not in extrinsics or camera_id not in intrinsics:
+                        visible, pts_2d = False, None
+                    else:
+                        visible, pts_2d = geometry.project_box_to_image(
+                            box_info, extrinsics[camera_id], intrinsics[camera_id], img_shape
+                        )
 
                     if visible:
                         track_camera_visible[frame_name][camera_id].append(track_id)
@@ -270,193 +273,4 @@ class TrackProcessor(BaseProcessor):
         with open(os.path.join(self.output_path, "trajectory.pkl"), "wb") as f:
             pickle.dump(trajectory_info, f)
 
-    def _check_camera_visible(
-        self,
-        box_info: Dict[str, Any],
-        camera_id: str,
-        extrinsics: Dict[str, np.ndarray],
-        intrinsics: Dict[str, np.ndarray],
-        img_shape: tuple = (1080, 1920),
-    ) -> tuple[bool, Optional[np.ndarray]]:
-        """
-        检查3D边界框在指定相机中是否可见，并返回2D投影点
-
-        注意：由于外参是sensor to vehicle，直接从车辆坐标系转换到相机坐标系
-
-        Args:
-            box_info: 3D边界框信息，包含中心点、尺寸、朝向等（车辆坐标系）
-            camera_id: 相机ID
-            extrinsics: 相机外参字典 (sensor to vehicle)
-            intrinsics: 相机内参字典
-            img_shape: 图像尺寸 (height, width)，默认为 (1080, 1920)
-
-        Returns:
-            tuple: (是否可见, 2D投影点数组)
-                - 是否可见: bool，表示边界框是否在相机视野内
-                - 2D投影点: np.ndarray shape (8, 2)，3D边界框8个顶点的2D投影坐标
-        """
-        try:
-            # 检查相机参数是否存在
-            if camera_id not in extrinsics or camera_id not in intrinsics:
-                return False, None
-
-            # 获取3D边界框的8个顶点（主车坐标系）
-            corners_3d = self._get_box_corners_3d(box_info)
-
-            # 转换到相机坐标系
-            corners_3d_camera = self._transform_to_camera(
-                corners_3d, extrinsics[camera_id]
-            )
-
-            # 检查是否在相机前方（z > 0）
-            z_values = corners_3d_camera[:, 2]
-            if np.any(z_values <= 0):
-                return False, None
-
-            # 投影到2D图像平面
-            pts_2d = self._project_to_2d(corners_3d_camera, intrinsics[camera_id])
-
-            # 检查投影结果是否有效
-            if pts_2d is None or np.any(np.isnan(pts_2d)) or np.any(np.isinf(pts_2d)):
-                return False, None
-
-            # 获取图像尺寸
-            img_height, img_width = img_shape
-
-            # 检查是否有点在图像范围内
-            x_in_range = (pts_2d[:, 0] >= 0) & (pts_2d[:, 0] < img_width)
-            y_in_range = (pts_2d[:, 1] >= 0) & (pts_2d[:, 1] < img_height)
-            points_in_image = x_in_range & y_in_range
-
-            # 如果至少有一个点在图像内，则认为可见
-            visible = bool(np.any(points_in_image))
-
-            return visible, pts_2d.astype(int) if visible else None
-
-        except Exception as e:
-            print(f"检查相机可见性时出错: {e}")
-            return False, None
-
-    def _get_box_corners_3d(self, box_info: Dict[str, Any]) -> np.ndarray:
-        """
-        获取3D边界框的8个顶点坐标（主车坐标系）
-
-        Args:
-            box_info: 边界框信息
-
-        Returns:
-            np.ndarray: shape (8, 3)，8个顶点的3D坐标
-        """
-        # 获取边界框参数
-        cx, cy, cz = box_info["center_x"], box_info["center_y"], box_info["center_z"]
-        length, width, height = (
-            box_info["length"],
-            box_info["width"],
-            box_info["height"],
-        )
-        heading = box_info["heading"]
-
-        # 定义边界框的8个顶点（相对于中心点）
-        # 顶点顺序：前下左、前下右、后下右、后下左、前上左、前上右、后上右、后上左
-        x_corners = np.array([
-            length / 2,
-            length / 2,
-            -length / 2,
-            -length / 2,
-            length / 2,
-            length / 2,
-            -length / 2,
-            -length / 2,
-        ])
-        y_corners = np.array([
-            -width / 2,
-            width / 2,
-            width / 2,
-            -width / 2,
-            -width / 2,
-            width / 2,
-            width / 2,
-            -width / 2,
-        ])
-        z_corners = np.array([
-            -height / 2,
-            -height / 2,
-            -height / 2,
-            -height / 2,
-            height / 2,
-            height / 2,
-            height / 2,
-            height / 2,
-        ])
-
-        # 组合成顶点矩阵
-        corners = np.vstack([x_corners, y_corners, z_corners])  # (3, 8)
-
-        # 应用旋转（绕z轴）
-        cos_h, sin_h = np.cos(heading), np.sin(heading)
-        rotation_matrix = np.array([[cos_h, -sin_h, 0], [sin_h, cos_h, 0], [0, 0, 1]])
-
-        # 旋转顶点
-        corners = rotation_matrix @ corners  # (3, 8)
-
-        # 平移到实际位置
-        corners[0, :] += cx
-        corners[1, :] += cy
-        corners[2, :] += cz
-
-        return corners.T  # (8, 3)
-
-    def _transform_to_camera(
-        self, points: np.ndarray, extrinsics: np.ndarray
-    ) -> np.ndarray:
-        """
-        将点从车辆坐标系转换到相机坐标系
-
-        注意：外参是sensor to vehicle，所以需要求逆来从vehicle转到sensor
-
-        Args:
-            points: shape (N, 3)，车辆坐标系下的点
-            extrinsics: shape (4, 4)，相机外参矩阵 (sensor to vehicle)
-
-        Returns:
-            np.ndarray: shape (N, 3)，相机坐标系下的点
-        """
-        # 转换为齐次坐标
-        points_homo = np.hstack([points, np.ones((points.shape[0], 1))])  # (N, 4)
-
-        # 应用逆变换矩阵（从车辆坐标系到相机坐标系）
-        extrinsics_inv = np.linalg.inv(extrinsics)
-        points_camera_homo = (extrinsics_inv @ points_homo.T).T  # (N, 4)
-
-        # 返回3D坐标
-        return points_camera_homo[:, :3]
-
-    def _project_to_2d(
-        self, points_3d: np.ndarray, intrinsics: np.ndarray
-    ) -> Optional[np.ndarray]:
-        """
-        将3D点投影到2D图像平面
-
-        Args:
-            points_3d: shape (N, 3)，相机坐标系下的3D点
-            intrinsics: shape (3, 3)，相机内参矩阵
-
-        Returns:
-            np.ndarray: shape (N, 2)，2D图像坐标，如果投影失败返回None
-        """
-        try:
-            # 投影到图像平面
-            points_2d_homo = (intrinsics @ points_3d.T).T  # (N, 3)
-
-            # 检查z坐标是否为零或接近零
-            z_coords = points_2d_homo[:, 2]
-            if np.any(np.abs(z_coords) < 1e-8):
-                return None
-
-            # 归一化得到像素坐标
-            points_2d = points_2d_homo[:, :2] / z_coords.reshape(-1, 1)  # (N, 2)
-
-            return points_2d
-        except Exception as e:
-            print(f"2D投影时出错: {e}")
-            return None
+    

@@ -14,7 +14,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .base import BaseProcessor
-from utils import default_logger, data_io
+from utils import default_logger, data_io, geometry
 
 # 相机ID列表
 CAMERA_IDS = ["0", "1", "2", "3", "4"]
@@ -85,6 +85,10 @@ class DynamicMaskProcessor(BaseProcessor):
                     if camera_id in images:
                         img_shape = images[camera_id].shape[:2]
 
+                    # 如果相机参数不存在，则跳过
+                    if camera_id not in extrinsics or camera_id not in intrinsics:
+                        continue
+
                     # 创建空白掩码图像
                     mask_image = np.zeros(img_shape, dtype=np.uint8)
 
@@ -96,12 +100,12 @@ class DynamicMaskProcessor(BaseProcessor):
                                 continue
 
                             # 投影3D框到2D图像
-                            _, pts_2d = self._project_box_to_2d(
-                                box_info, camera_id, extrinsics, intrinsics, img_shape
+                            visible, pts_2d = geometry.project_box_to_image(
+                                box_info, extrinsics[camera_id], intrinsics[camera_id], img_shape
                             )
 
                             # 如果投影点有效，则在掩码上绘制填充多边形
-                            if pts_2d is not None:
+                            if visible and pts_2d is not None:
                                 # 使用凸包来获得一个封闭的多边形
                                 hull = cv2.convexHull(pts_2d)
                                 cv2.drawContours(mask_image, [hull], -1, (255), thickness=cv2.FILLED)
@@ -119,75 +123,3 @@ class DynamicMaskProcessor(BaseProcessor):
             import traceback
             traceback.print_exc()
             return False
-
-    def _project_box_to_2d(
-        self,
-        box_info: Dict[str, Any],
-        camera_id: str,
-        extrinsics: Dict[str, np.ndarray],
-        intrinsics: Dict[str, np.ndarray],
-        img_shape: tuple,
-    ) -> tuple[bool, Any]:
-        """
-        将单个3D边界框投影到指定相机的2D图像平面。
-        (此函数逻辑复用自 core/track.py)
-        """
-        if camera_id not in extrinsics or camera_id not in intrinsics:
-            return False, None
-
-        corners_3d = self._get_box_corners_3d(box_info)
-
-        # 转换到相机坐标系
-        extrinsics_inv = np.linalg.inv(extrinsics[camera_id])
-        points_homo = np.hstack([corners_3d, np.ones((corners_3d.shape[0], 1))])
-        corners_3d_camera = (extrinsics_inv @ points_homo.T).T[:, :3]
-
-        # 检查是否在相机前方
-        if np.any(corners_3d_camera[:, 2] <= 0):
-            return False, None
-
-        # 投影到2D图像平面
-        intrinsics_matrix = intrinsics[camera_id]
-        points_2d_homo = (intrinsics_matrix @ corners_3d_camera.T).T
-
-        z_coords = points_2d_homo[:, 2]
-        if np.any(np.abs(z_coords) < 1e-8):
-            return None, None
-
-        pts_2d = points_2d_homo[:, :2] / z_coords.reshape(-1, 1)
-
-        # 检查是否有任何部分在图像内
-        img_height, img_width = img_shape
-        x_in_range = (pts_2d[:, 0] >= 0) & (pts_2d[:, 0] < img_width)
-        y_in_range = (pts_2d[:, 1] >= 0) & (pts_2d[:, 1] < img_height)
-
-        # 只要有任何一个角点在图像内，就认为可见
-        if not np.any(x_in_range & y_in_range):
-            return False, None
-
-        return True, pts_2d.astype(int)
-
-    def _get_box_corners_3d(self, box_info: Dict[str, Any]) -> np.ndarray:
-        """
-        获取3D边界框的8个顶点坐标（主车坐标系）。
-        (此函数逻辑复用自 core/track.py)
-        """
-        cx, cy, cz = box_info["center_x"], box_info["center_y"], box_info["center_z"]
-        length, width, height = box_info["length"], box_info["width"], box_info["height"]
-        heading = box_info["heading"]
-
-        x_corners = np.array([l / 2 for l in [length, length, -length, -length, length, length, -length, -length]])
-        y_corners = np.array([w / 2 for w in [-width, width, width, -width, -width, width, width, -width]])
-        z_corners = np.array([h / 2 for h in [-height, -height, -height, -height, height, height, height, height]])
-
-        corners = np.vstack([x_corners, y_corners, z_corners])
-
-        cos_h, sin_h = np.cos(heading), np.sin(heading)
-        rotation_matrix = np.array([[cos_h, -sin_h, 0], [sin_h, cos_h, 0], [0, 0, 1]])
-
-        corners = rotation_matrix @ corners
-        corners[0, :] += cx
-        corners[1, :] += cy
-        corners[2, :] += cz
-
-        return corners.T
