@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 from typing import Dict
-from plyfile import PlyData, PlyElement
+from plyfile import PlyData
 
 from .base import BaseProcessor
 from utils import default_logger, data_io
@@ -420,7 +420,7 @@ class PointCloudProcessor(BaseProcessor):
                 masks_inbbox_expanded = masks_inbbox[..., None]
                 ply_actor_path = lidar_dir_actor / track_id / f"{frame_name}.ply"
                 try:
-                    storePly(
+                    data_io.storePly(
                         ply_actor_path,
                         xyzs_inbbox,
                         rgbs_inbbox,
@@ -437,7 +437,7 @@ class PointCloudProcessor(BaseProcessor):
 
         ply_background_path = lidar_dir_background / f"{frame_name}.ply"
         try:
-            storePly(
+            data_io.storePly(
                 ply_background_path,
                 xyzs_background,
                 rgbs_background,
@@ -445,32 +445,3 @@ class PointCloudProcessor(BaseProcessor):
             )
         except Exception as e:
             default_logger.error(f"保存background点云失败 {frame_name}: {e}")
-
-
-def storePly(path, xyz, rgb, mask):
-    # set rgb to 0 - 255
-    if rgb.max() <= 1.0 and rgb.min() >= 0:
-        rgb = np.clip(rgb * 255, 0.0, 255.0)
-
-    # set mask to bool data type
-    mask = mask.astype(np.bool_)
-
-    # Define the dtype for the structured array
-    dtype = [
-        ("x", "f4"),
-        ("y", "f4"),
-        ("z", "f4"),
-        ("red", "u1"),
-        ("green", "u1"),
-        ("blue", "u1"),
-        ("mask", "?"),
-    ]
-
-    elements = np.empty(xyz.shape[0], dtype=dtype)
-    attributes = np.concatenate((xyz, rgb, mask), axis=1)
-    elements[:] = list(map(tuple, attributes))
-
-    # Create the PlyData object and write to file
-    vertex_element = PlyElement.describe(elements, "vertex")
-    ply_data = PlyData([vertex_element])
-    ply_data.write(path)

@@ -10,8 +10,46 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from plyfile import PlyData, PlyElement
 
 from utils.logger import default_logger
+
+
+def save_ply(path: Path, xyz: np.ndarray, rgb: np.ndarray, mask: np.ndarray):
+    """将点云数据保存为PLY文件
+
+    Args:
+        path: PLY文件的保存路径
+        xyz: 点云坐标 (N, 3)
+        rgb: 点云颜色 (N, 3)
+        mask: 点云掩码 (N, 1)
+    """
+    # set rgb to 0 - 255
+    if rgb.max() <= 1.0 and rgb.min() >= 0:
+        rgb = np.clip(rgb * 255, 0.0, 255.0)
+
+    # set mask to bool data type
+    mask = mask.astype(np.bool_)
+
+    # Define the dtype for the structured array
+    dtype = [
+        ("x", "f4"),
+        ("y", "f4"),
+        ("z", "f4"),
+        ("red", "u1"),
+        ("green", "u1"),
+        ("blue", "u1"),
+        ("mask", "?"),
+    ]
+
+    elements = np.empty(xyz.shape[0], dtype=dtype)
+    attributes = np.concatenate((xyz, rgb, mask), axis=1)
+    elements[:] = list(map(tuple, attributes))
+
+    # Create the PlyData object and write to file
+    vertex_element = PlyElement.describe(elements, "vertex")
+    ply_data = PlyData([vertex_element])
+    ply_data.write(str(path))
 
 
 def load_pickle(file_path: Path) -> Any:
