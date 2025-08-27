@@ -16,9 +16,6 @@ from tqdm import tqdm
 from .base import BaseProcessor
 from utils import default_logger, data_io, geometry
 
-# 相机ID列表
-CAMERA_IDS = ["0", "1", "2", "3", "4"]
-
 
 class DynamicMaskProcessor(BaseProcessor):
     """
@@ -40,6 +37,9 @@ class DynamicMaskProcessor(BaseProcessor):
         self.mask_output_path = os.path.join(self.output_path, "dynamic_mask")
         self.image_output_path = os.path.join(self.output_path, "images")
         self.ensure_dir(self.mask_output_path)
+
+        camera_config = self.config.get("camera", {})
+        self.camera_ids = [str(v) for v in camera_config.get("id_map", {}).values()]
 
         # 默认图像尺寸，作为无法加载图像时的备用
         self.default_image_shape = (1080, 1920)  # (height, width)
@@ -79,7 +79,7 @@ class DynamicMaskProcessor(BaseProcessor):
                 frame_objects = track_info_data[frame_name]
                 images = data_io.load_images(self.image_output_path, frame_name)
 
-                for camera_id in CAMERA_IDS:
+                for camera_id in self.camera_ids:
                     # 动态获取图像尺寸
                     img_shape = self.default_image_shape
                     if camera_id in images:

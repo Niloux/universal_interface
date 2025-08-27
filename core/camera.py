@@ -36,12 +36,12 @@ class CameraProcessor(BaseProcessor):
             config: 配置字典，包含相机位置列表和路径信息
         """
         super().__init__(config)
-        # 处理camera配置，可能是列表或字典格式
-        camera_config = config.get("camera", [])
-        if isinstance(camera_config, list):
-            self.camera_positions = camera_config
-        else:
-            self.camera_positions = camera_config.get("positions", [])
+        camera_config = config.get("camera", {})
+        self.camera_positions = camera_config.get("positions", [])
+        self.camera_id_map = camera_config.get("id_map", {})
+
+        if not self.camera_positions or not self.camera_id_map:
+            raise ValueError("配置文件中缺少相机 positions 或 id_map")
 
         self.input_path = config["input"]
         self.output_path = config["output"]
@@ -53,15 +53,6 @@ class CameraProcessor(BaseProcessor):
         default_logger.info(
             f"初始化相机处理器，支持 {len(self.camera_positions)} 个相机位置"
         )
-
-        # 相机位置到ID的映射
-        self.camera_id_map = {
-            "FRONT": 0,
-            "FRONT_LEFT": 1,
-            "FRONT_RIGHT": 2,
-            "SIDE_LEFT": 3,
-            "SIDE_RIGHT": 4,
-        }
 
     def process(self) -> bool:
         """

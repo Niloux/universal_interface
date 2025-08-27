@@ -26,8 +26,6 @@ from tqdm import tqdm
 from .base import BaseProcessor
 from utils import data_io, geometry
 
-CAMERA = ["0", "1", "2", "3", "4"]
-
 
 class TrackProcessor(BaseProcessor):
     """
@@ -49,6 +47,10 @@ class TrackProcessor(BaseProcessor):
         self.input_path = os.path.join(self.raw_input_path, "objects")
         self.output_path = os.path.join(self.output_root_path, "track")
         self.image_output_path = os.path.join(self.output_root_path, "images")
+
+        camera_config = self.config.get("camera", {})
+        # 从配置中加载相机ID，并将纯数字ID转为字符串以匹配代码逻辑
+        self.camera_ids = [str(v) for v in camera_config.get("id_map", {}).values()]
 
         self.ensure_dir(self.output_path)
 
@@ -88,7 +90,7 @@ class TrackProcessor(BaseProcessor):
 
             frame_name = f"{frame_id:06d}"
             track_info[frame_name] = {}
-            track_camera_visible[frame_name] = {camera_id: [] for camera_id in CAMERA}
+            track_camera_visible[frame_name] = {camera_id: [] for camera_id in self.camera_ids}
 
             images = data_io.load_images(self.image_output_path, frame_name)
 
@@ -127,7 +129,7 @@ class TrackProcessor(BaseProcessor):
                 trajectory[track_id][frame_name] = box_info
 
                 # 检查相机可见性并绘制3D框
-                for camera_id in CAMERA:
+                for camera_id in self.camera_ids:
                     # 获取图像尺寸（如果图像存在）
                     img_shape = (1080, 1920)  # 默认尺寸
                     if camera_id in images:
@@ -151,46 +153,25 @@ class TrackProcessor(BaseProcessor):
                     ):
                         # 画出外轮廓线
                         for i, j in [
-                            [0, 1],
-                            [1, 2],
-                            [2, 3],
-                            [3, 0],
-                            [4, 5],
-                            [5, 6],
-                            [6, 7],
-                            [7, 4],
-                            [0, 4],
-                            [1, 5],
-                            [2, 6],
-                            [3, 7],
+                            [0, 1], [1, 2], [2, 3], [3, 0],
+                            [4, 5], [5, 6], [6, 7], [7, 4],
+                            [0, 4], [1, 5], [2, 6], [3, 7],
                         ]:
                             pt1, pt2 = pts_2d[i], pts_2d[j]
                             pt1 = (int(pt1[0]), int(pt1[1]))
                             pt2 = (int(pt2[0]), int(pt2[1]))
 
-                            # 检查线段是否与图像区域有交集（更宽松的条件）
                             img_h, img_w = images[camera_id].shape[:2]
-
-                            # 只要线段的任一端点在图像内，或者线段可能与图像边界相交就绘制
                             pt1_in = 0 <= pt1[0] < img_w and 0 <= pt1[1] < img_h
                             pt2_in = 0 <= pt2[0] < img_w and 0 <= pt2[1] < img_h
-
-                            # 检查线段是否可能与图像区域相交
                             line_intersects = (
-                                min(pt1[0], pt2[0]) < img_w
-                                and max(pt1[0], pt2[0]) >= 0
-                                and min(pt1[1], pt2[1]) < img_h
-                                and max(pt1[1], pt2[1]) >= 0
+                                min(pt1[0], pt2[0]) < img_w and max(pt1[0], pt2[0]) >= 0 and
+                                min(pt1[1], pt2[1]) < img_h and max(pt1[1], pt2[1]) >= 0
                             )
 
                             if pt1_in or pt2_in or line_intersects:
-                                cv2.line(
-                                    images[camera_id],
-                                    pt1,
-                                    pt2,
-                                    (255, 0, 0),
-                                    2,
-                                )
+                                cv2.line(images[camera_id], pt1, pt2, (255, 0, 0), 2)
+
             # 生成可视化图像（前三个相机拼接）
             if all(camera_id in images for camera_id in ["0", "1", "2"]):
                 track_vis_img = np.concatenate(
@@ -205,12 +186,7 @@ class TrackProcessor(BaseProcessor):
                 continue
             trajectory_info[track_id] = {}
 
-            dims = []
-            frames = []
-            timestamps = []
-            poses_vehicle = []  # 主车坐标系
-            poses_world = []  # 世界坐标系
-            speeds = []
+            dims, frames, timestamps, poses_vehicle, poses_world, speeds = [], [], [], [], [], []
 
             for frame_name, box in info.items():
                 dims.append([box["height"], box["width"], box["length"]])
@@ -224,11 +200,7 @@ class TrackProcessor(BaseProcessor):
                     [math.sin(box["heading"]), math.cos(box["heading"]), 0],
                     [0, 0, 1],
                 ])
-                pose_vehicle[:3, 3] = np.array([
-                    box["center_x"],
-                    box["center_y"],
-                    box["center_z"],
-                ])
+                pose_vehicle[:3, 3] = np.array([box["center_x"], box["center_y"], box["center_z"]])
                 ego_pose = data_io.load_ego_pose(self.output_root_path, int(frame_name))
                 pose_world = np.matmul(ego_pose, pose_vehicle)
                 poses_vehicle.append(pose_vehicle.astype(np.float32))
@@ -239,7 +211,6 @@ class TrackProcessor(BaseProcessor):
             poses_vehicle = np.array(poses_vehicle).astype(np.float32)
             poses_world = np.array(poses_world).astype(np.float32)
 
-            # 计算是否动态
             positions = poses_world[:, :3, 3]
             distance = np.linalg.norm(positions[0] - positions[-1])
             dynamic = np.any(np.std(positions, axis=0) > 0.5) or distance > 2
@@ -259,18 +230,13 @@ class TrackProcessor(BaseProcessor):
             }
 
         if track_vis_imgs:
-            imageio.mimwrite(
-                os.path.join(self.output_path, "track_vis.mp4"), track_vis_imgs, fps=24
-            )
+            imageio.mimwrite(os.path.join(self.output_path, "track_vis.mp4"), track_vis_imgs, fps=24)
+        
         with open(os.path.join(self.output_path, "track_info.pkl"), "wb") as f:
             pickle.dump(track_info, f)
         with open(os.path.join(self.output_path, "track_ids.json"), "w") as f:
             json.dump(object_ids, f, indent=4)
-        with open(
-            os.path.join(self.output_path, "track_camera_visible.pkl"), "wb"
-        ) as f:
+        with open(os.path.join(self.output_path, "track_camera_visible.pkl"), "wb") as f:
             pickle.dump(track_camera_visible, f)
         with open(os.path.join(self.output_path, "trajectory.pkl"), "wb") as f:
             pickle.dump(trajectory_info, f)
-
-    
