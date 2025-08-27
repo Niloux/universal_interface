@@ -7,8 +7,3 @@ input:
 output:
   "/home/saimo/wuyou/universal_interface/test"
 
-process:
-  ego_pose: true
-  camera: true
-  track: true
-  dynamic_mask: true

@@ -3,54 +3,44 @@
 3DGS训练通用数据接口，将自定义数据集转换成3DGS训练数据格式。
 """
 
-from core import ProcessorFactory
-from utils import Config, logger
+from utils.config import Config
+from utils.logger import default_logger
+from core.ego_pose import EgoPoseProcessor
+from core.camera import CameraProcessor
+from core.track import TrackProcessor
+from core.dynamic_mask import DynamicMaskProcessor
 
-
-def main() -> None:
-    """主函数：根据配置文件动态执行数据处理任务"""
+def main() -> int:
+    """主函数：按顺序执行所有数据处理任务"""
     try:
-        logger.info("Universal Interface 启动")
+        default_logger.info("Universal Interface 启动")
 
         # 加载配置
         config = Config()
-        logger.success("配置加载成功")
+        default_logger.success("配置加载成功")
 
-        # 显示可用的处理器
-        available_processors = ProcessorFactory.get_available_processors()
-        logger.info(f"可用的处理器: {', '.join(available_processors)}")
+        # -- 按顺序显式执行数据处理流水线 --
+        processors = [
+            (EgoPoseProcessor, "Ego-Pose数据处理"),
+            (CameraProcessor, "相机内外参及图像处理"),
+            (TrackProcessor, "轨迹和动态物体处理"),
+            (DynamicMaskProcessor, "动态物体掩码生成"),
+        ]
 
-        # 创建所有启用的处理器
-        processors = ProcessorFactory.create_enabled_processors(config)
+        for processor_class, name in processors:
+            default_logger.info(f"--- 开始运行: {name} ---")
+            processor = processor_class(config)
+            processor.process()
+            default_logger.success(f"--- {name} 运行成功 ---")
 
-        if not processors:
-            logger.warning("没有启用任何处理器，请检查配置文件")
-            return 1
-
-        logger.info(f"开始处理数据，共启用 {len(processors)} 个处理器")
-
-        # 执行所有处理器
-        success_count = 0
-        for processor in processors:
-            processor_name = processor.__class__.__name__
-            logger.info(f"正在执行: {processor_name}")
-            try:
-                processor.process()
-                logger.success(f"{processor_name} 执行完成")
-                success_count += 1
-            except Exception as e:
-                logger.error(f"{processor_name} 执行失败: {e}")
-
-        if success_count == len(processors):
-            logger.success("所有数据处理任务完成！")
-        else:
-            logger.warning(f"部分任务失败，成功: {success_count}/{len(processors)}")
+        default_logger.success("所有数据处理任务完成！")
+        return 0
 
     except Exception as e:
-        logger.error(f"程序执行失败: {e}")
+        default_logger.error(f"程序执行失败: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
-
-    return 0
 
 
 if __name__ == "__main__":
