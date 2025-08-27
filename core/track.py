@@ -14,9 +14,8 @@ track_vis.mp4
 
 import json
 import math
-import os
 import pickle
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import cv2
 import imageio
@@ -24,7 +23,8 @@ import numpy as np
 from tqdm import tqdm
 
 from .base import BaseProcessor
-from utils import data_io, geometry
+from utils import data_io, geometry, default_logger
+from utils.config import Config
 
 
 class TrackProcessor(BaseProcessor):
@@ -34,36 +34,39 @@ class TrackProcessor(BaseProcessor):
     负责处理轨迹相关数据的读取、转换和输出
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Config):
         """
         初始化Track处理器
 
         Args:
-            config: 配置字典
+            config: 配置管理对象
         """
         super().__init__(config)
-        self.raw_input_path = self.config["input"]
-        self.output_root_path = self.config["output"]
-        self.input_path = os.path.join(self.raw_input_path, "objects")
-        self.output_path = os.path.join(self.output_root_path, "track")
-        self.image_output_path = os.path.join(self.output_root_path, "images")
+        self.raw_input_path = self.config.input
+        self.output_root_path = self.config.output
+        self.input_path = self.raw_input_path / "objects"
+        self.output_path = self.output_root_path / "track"
+        self.image_output_path = self.output_root_path / "images"
 
-        camera_config = self.config.get("camera", {})
         # 从配置中加载相机ID，并将纯数字ID转为字符串以匹配代码逻辑
-        self.camera_ids = [str(v) for v in camera_config.get("id_map", {}).values()]
+        self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
 
         self.ensure_dir(self.output_path)
 
+        self.category_mapping = {
+            "vehicle": "vehicle",
+            "pedestrian": "pedestrian",
+            "bicycle": "cyclist",
+            "motorcycle": "cyclist",
+            "sign": "sign",
+            "traffic": "sign"
+        }
+
     def _map_category(self, name: str) -> Optional[str]:
         name = name.lower()
-        if "vehicle" in name:
-            return "vehicle"
-        elif "pedestrian" in name:
-            return "pedestrian"
-        elif "bicycle" in name or "motorcycle" in name:
-            return "cyclist"
-        elif "sign" in name or "traffic" in name:
-            return "sign"
+        for key, value in self.category_mapping.items():
+            if key in name:
+                return value
         return None
 
     def process(self) -> None:
@@ -71,7 +74,7 @@ class TrackProcessor(BaseProcessor):
         处理轨迹数据
         """
         if not self.check_dir(self.input_path):
-            print(f"track目录不存在: {self.input_path}, 跳过处理")
+            default_logger.warning(f"track目录不存在: {self.input_path}, 跳过处理")
             return
 
         track_info = {}
@@ -80,19 +83,19 @@ class TrackProcessor(BaseProcessor):
         object_ids = {}
         track_vis_imgs = []
 
-        extrinsics = data_io.load_extrinsics(self.output_root_path)
-        intrinsics = data_io.load_intrinsics(self.output_root_path)
+        extrinsics = data_io.load_extrinsics(self.output_root_path, self.camera_ids)
+        intrinsics = data_io.load_intrinsics(self.output_root_path, self.camera_ids)
 
-        for frame_id, f in enumerate(tqdm(sorted(os.listdir(self.input_path)))):
-            object_file = os.path.join(self.input_path, f)
-            with open(object_file, "r") as f:
-                data = json.load(f)
+        for frame_id, f in enumerate(tqdm(sorted(self.input_path.iterdir()))):
+            object_file = f
+            with open(object_file, "r") as f_json:
+                data = json.load(f_json)
 
             frame_name = f"{frame_id:06d}"
             track_info[frame_name] = {}
             track_camera_visible[frame_name] = {camera_id: [] for camera_id in self.camera_ids}
 
-            images = data_io.load_images(self.image_output_path, frame_name)
+            images = data_io.load_images(self.image_output_path, frame_name, self.camera_ids)
 
             for j in data:
                 track_id = j.get("track_id")
@@ -152,12 +155,12 @@ class TrackProcessor(BaseProcessor):
                         and pts_2d is not None
                     ):
                         # 画出外轮廓线
-                        for i, j in [
+                        for i, j_point in [
                             [0, 1], [1, 2], [2, 3], [3, 0],
                             [4, 5], [5, 6], [6, 7], [7, 4],
                             [0, 4], [1, 5], [2, 6], [3, 7],
                         ]:
-                            pt1, pt2 = pts_2d[i], pts_2d[j]
+                            pt1, pt2 = pts_2d[i], pts_2d[j_point]
                             pt1 = (int(pt1[0]), int(pt1[1]))
                             pt2 = (int(pt2[0]), int(pt2[1]))
 
@@ -230,13 +233,13 @@ class TrackProcessor(BaseProcessor):
             }
 
         if track_vis_imgs:
-            imageio.mimwrite(os.path.join(self.output_path, "track_vis.mp4"), track_vis_imgs, fps=24)
+            imageio.mimwrite(str(self.output_path / "track_vis.mp4"), track_vis_imgs, fps=24)
         
-        with open(os.path.join(self.output_path, "track_info.pkl"), "wb") as f:
+        with open(self.output_path / "track_info.pkl", "wb") as f:
             pickle.dump(track_info, f)
-        with open(os.path.join(self.output_path, "track_ids.json"), "w") as f:
+        with open(self.output_path / "track_ids.json", "w") as f:
             json.dump(object_ids, f, indent=4)
-        with open(os.path.join(self.output_path, "track_camera_visible.pkl"), "wb") as f:
+        with open(self.output_path / "track_camera_visible.pkl", "wb") as f:
             pickle.dump(track_camera_visible, f)
-        with open(os.path.join(self.output_path, "trajectory.pkl"), "wb") as f:
+        with open(self.output_path / "trajectory.pkl", "wb") as f:
             pickle.dump(trajectory_info, f)

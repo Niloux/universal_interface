@@ -6,15 +6,13 @@ Dynamic Mask数据处理模块
 该模块负责根据动态物体的轨迹，生成每个相机视角下的2D掩码图像。
 """
 
-import os
-from typing import Any, Dict
-
 import cv2
 import numpy as np
 from tqdm import tqdm
 
 from .base import BaseProcessor
 from utils import default_logger, data_io, geometry
+from utils.config import Config
 
 
 class DynamicMaskProcessor(BaseProcessor):
@@ -24,22 +22,21 @@ class DynamicMaskProcessor(BaseProcessor):
     负责根据轨迹信息，为动态物体生成并保存2D掩码。
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Config):
         """
         初始化DynamicMaskProcessor
 
         Args:
-            config: 配置字典
+            config: 配置管理对象
         """
         super().__init__(config)
-        self.output_path = config["output"]
-        self.track_output_path = os.path.join(self.output_path, "track")
-        self.mask_output_path = os.path.join(self.output_path, "dynamic_mask")
-        self.image_output_path = os.path.join(self.output_path, "images")
+        self.output_path = self.config.output
+        self.track_output_path = self.output_path / "track"
+        self.mask_output_path = self.output_path / "dynamic_mask"
+        self.image_output_path = self.output_path / "images"
         self.ensure_dir(self.mask_output_path)
 
-        camera_config = self.config.get("camera", {})
-        self.camera_ids = [str(v) for v in camera_config.get("id_map", {}).values()]
+        self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
 
         # 默认图像尺寸，作为无法加载图像时的备用
         self.default_image_shape = (1080, 1920)  # (height, width)
@@ -55,15 +52,15 @@ class DynamicMaskProcessor(BaseProcessor):
             default_logger.info("开始生成动态物体掩码...")
 
             # 1. 加载所需数据
-            trajectory_data = data_io.load_pickle(os.path.join(self.track_output_path, "trajectory.pkl"))
-            track_info_data = data_io.load_pickle(os.path.join(self.track_output_path, "track_info.pkl"))
+            trajectory_data = data_io.load_pickle(self.track_output_path / "trajectory.pkl")
+            track_info_data = data_io.load_pickle(self.track_output_path / "track_info.pkl")
 
             if not trajectory_data or not track_info_data:
                 default_logger.warning("缺少轨迹或跟踪信息文件，跳过动态掩码生成。")
                 return False
 
-            extrinsics = data_io.load_extrinsics(self.output_path)
-            intrinsics = data_io.load_intrinsics(self.output_path)
+            extrinsics = data_io.load_extrinsics(self.output_path, self.camera_ids)
+            intrinsics = data_io.load_intrinsics(self.output_path, self.camera_ids)
 
             # 2. 识别所有动态物体的track_id
             dynamic_track_ids = {
@@ -77,7 +74,7 @@ class DynamicMaskProcessor(BaseProcessor):
             frame_names = sorted(track_info_data.keys())
             for frame_name in tqdm(frame_names, desc="生成动态掩码"):
                 frame_objects = track_info_data[frame_name]
-                images = data_io.load_images(self.image_output_path, frame_name)
+                images = data_io.load_images(self.image_output_path, frame_name, self.camera_ids)
 
                 for camera_id in self.camera_ids:
                     # 动态获取图像尺寸
@@ -112,8 +109,8 @@ class DynamicMaskProcessor(BaseProcessor):
 
                     # 保存掩码图像
                     output_filename = f"{frame_name}_{camera_id}.png"
-                    output_filepath = os.path.join(self.mask_output_path, output_filename)
-                    cv2.imwrite(output_filepath, mask_image)
+                    output_filepath = self.mask_output_path / output_filename
+                    cv2.imwrite(str(output_filepath), mask_image)
 
             default_logger.success("动态物体掩码生成完成。")
             return True

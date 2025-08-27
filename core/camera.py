@@ -10,14 +10,14 @@ Camera数据处理模块
 """
 
 import json
-import os
 import shutil
 from typing import Any, Dict, List
+from pathlib import Path
 
 from tqdm import tqdm
 
 from utils import default_logger
-
+from utils.config import Config
 from .base import BaseProcessor
 
 
@@ -28,27 +28,23 @@ class CameraProcessor(BaseProcessor):
     负责处理相机内外参和图像数据的读取、转换和输出
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Config):
         """
         初始化相机处理器
 
         Args:
-            config: 配置字典，包含相机位置列表和路径信息
+            config: 配置管理对象
         """
         super().__init__(config)
-        camera_config = config.get("camera", {})
-        self.camera_positions = camera_config.get("positions", [])
-        self.camera_id_map = camera_config.get("id_map", {})
+        self.camera_positions = self.config.camera.positions
+        self.camera_id_map = self.config.camera.id_map
 
-        if not self.camera_positions or not self.camera_id_map:
-            raise ValueError("配置文件中缺少相机 positions 或 id_map")
-
-        self.input_path = config["input"]
-        self.output_path = config["output"]
+        self.input_path = self.config.input
+        self.output_path = self.config.output
 
         # 定义输入路径
-        self.images_path = os.path.join(self.input_path, "images")
-        self.metadata_path = os.path.join(self.input_path, "images_metadata")
+        self.images_path = self.input_path / "images"
+        self.metadata_path = self.input_path / "images_metadata"
 
         default_logger.info(
             f"初始化相机处理器，支持 {len(self.camera_positions)} 个相机位置"
@@ -65,9 +61,9 @@ class CameraProcessor(BaseProcessor):
             default_logger.info(f"开始处理 {len(self.camera_positions)} 个相机的数据")
 
             # 创建输出目录
-            images_output_dir = os.path.join(self.output_path, "images")
-            intrinsics_output_dir = os.path.join(self.output_path, "intrinsics")
-            extrinsics_output_dir = os.path.join(self.output_path, "extrinsics")
+            images_output_dir = self.output_path / "images"
+            intrinsics_output_dir = self.output_path / "intrinsics"
+            extrinsics_output_dir = self.output_path / "extrinsics"
 
             self.ensure_dir(images_output_dir)
             self.ensure_dir(intrinsics_output_dir)
@@ -87,7 +83,7 @@ class CameraProcessor(BaseProcessor):
             return False
 
     def _generate_camera_params(
-        self, intrinsics_output_dir: str, extrinsics_output_dir: str
+        self, intrinsics_output_dir: Path, extrinsics_output_dir: Path
     ):
         """
         生成相机参数文件
@@ -109,16 +105,16 @@ class CameraProcessor(BaseProcessor):
                 metadata = json.load(f)
 
             # 生成内参文件
-            intrinsics_file = os.path.join(intrinsics_output_dir, f"{camera_id}.txt")
+            intrinsics_file = intrinsics_output_dir / f"{camera_id}.txt"
             self._write_intrinsics_file(metadata, intrinsics_file)
 
             # 生成外参文件
-            extrinsics_file = os.path.join(extrinsics_output_dir, f"{camera_id}.txt")
+            extrinsics_file = extrinsics_output_dir / f"{camera_id}.txt"
             self._write_extrinsics_file(metadata, extrinsics_file)
 
         default_logger.info("相机参数文件生成完成")
 
-    def _get_image_files(self, camera_position: str) -> List[str]:
+    def _get_image_files(self, camera_position: str) -> List[Path]:
         """
         获取图像文件列表
 
@@ -128,18 +124,18 @@ class CameraProcessor(BaseProcessor):
         Returns:
             图像文件路径列表
         """
-        images_dir = os.path.join(self.images_path, camera_position)
-        if not os.path.exists(images_dir):
+        images_dir = self.images_path / camera_position
+        if not images_dir.exists():
             return []
 
         image_files = []
-        for filename in os.listdir(images_dir):
-            if filename.lower().endswith((".jpg", ".jpeg", ".png")):
-                image_files.append(os.path.join(images_dir, filename))
+        for item in images_dir.iterdir():
+            if item.is_file() and item.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+                image_files.append(item)
 
         return sorted(image_files)
 
-    def _get_metadata_files(self, camera_position: str) -> List[str]:
+    def _get_metadata_files(self, camera_position: str) -> List[Path]:
         """
         获取元数据文件列表
 
@@ -149,18 +145,18 @@ class CameraProcessor(BaseProcessor):
         Returns:
             元数据文件路径列表
         """
-        metadata_dir = os.path.join(self.metadata_path, camera_position)
-        if not os.path.exists(metadata_dir):
+        metadata_dir = self.metadata_path / camera_position
+        if not metadata_dir.exists():
             return []
 
         metadata_files = []
-        for filename in os.listdir(metadata_dir):
-            if filename.lower().endswith(".json"):
-                metadata_files.append(os.path.join(metadata_dir, filename))
+        for item in metadata_dir.iterdir():
+            if item.is_file() and item.suffix.lower() == ".json":
+                metadata_files.append(item)
 
         return sorted(metadata_files)
 
-    def _process_images(self, images_output_dir: str):
+    def _process_images(self, images_output_dir: Path):
         """
         处理图像文件，按照帧号_相机ID.png的格式命名
 
@@ -181,14 +177,12 @@ class CameraProcessor(BaseProcessor):
                 camera_id = self.camera_id_map[camera_position]
 
                 # 源图像文件
-                input_dir = os.path.join(self.images_path, camera_position)
-                source_file = os.path.join(input_dir, f"{frame_name}.jpg")
+                input_dir = self.images_path / camera_position
+                source_file = input_dir / f"{frame_name}.jpg"
 
-                if os.path.exists(source_file):
+                if source_file.exists():
                     # 目标文件名：帧号_相机ID.png
-                    output_file = os.path.join(
-                        images_output_dir, f"{frame_name}_{camera_id}.png"
-                    )
+                    output_file = images_output_dir / f"{frame_name}_{camera_id}.png"
 
                     try:
                         # 复制并转换格式（如果需要）
@@ -196,7 +190,7 @@ class CameraProcessor(BaseProcessor):
                     except Exception as e:
                         default_logger.error(f"处理图像文件 {source_file} 时出错: {e}")
 
-    def _write_intrinsics_file(self, metadata: Dict[str, Any], output_file: str):
+    def _write_intrinsics_file(self, metadata: Dict[str, Any], output_file: Path):
         """
         写入内参文件
 
@@ -235,7 +229,7 @@ class CameraProcessor(BaseProcessor):
             f.write(f"{p2:.18e}\n")
             f.write(f"{k3:.18e}\n")
 
-    def _write_extrinsics_file(self, metadata: Dict[str, Any], output_file: str):
+    def _write_extrinsics_file(self, metadata: Dict[str, Any], output_file: Path):
         """
         写入外参文件
 

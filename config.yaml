@@ -7,9 +7,6 @@ camera:
     SIDE_LEFT: 3
     SIDE_RIGHT: 4
 
-input:
-  "/home/saimo/wuyou/universal_interface/input"
-
-output:
-  "/home/saimo/wuyou/universal_interface/test"
+input: "/home/saimo/wuyou/universal_interface/input"
+output: "/home/saimo/wuyou/universal_interface/test"
 

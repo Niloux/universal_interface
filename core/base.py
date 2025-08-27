@@ -4,10 +4,9 @@
 所有具体的数据处理器都应该继承BaseProcessor类。
 """
 
-import os
 from abc import ABC, abstractmethod
 from typing import List
-
+from pathlib import Path
 
 from utils.config import Config
 
@@ -39,29 +38,25 @@ class BaseProcessor(ABC):
         """
         pass
 
-    def get_folders(self, path: str) -> List[str]:
+    def get_folders(self, path: Path) -> List[Path]:
         """获取指定路径下的所有文件夹名称
 
         Args:
             path: 要扫描的目录路径
 
         Returns:
-            文件夹名称列表
+            文件夹路径列表
 
         Raises:
             OSError: 当路径不存在或无法访问时
         """
-        if not os.path.exists(path):
+        if not path.exists():
             raise OSError(f"路径不存在: {path}")
 
-        folders = []
-        for item in os.listdir(path):
-            item_path = os.path.join(path, item)
-            if os.path.isdir(item_path):
-                folders.append(item)
+        folders = [item for item in path.iterdir() if item.is_dir()]
         return folders
 
-    def ensure_dir(self, path: str) -> None:
+    def ensure_dir(self, path: Path) -> None:
         """确保目录存在，如果不存在则创建
 
         Args:
@@ -70,13 +65,9 @@ class BaseProcessor(ABC):
         Raises:
             OSError: 当无法创建目录时
         """
-        if not os.path.exists(path):
-            try:
-                os.makedirs(path, exist_ok=True)
-            except OSError as e:
-                raise OSError(f"无法创建目录 {path}: {e}")
+        path.mkdir(parents=True, exist_ok=True)
 
-    def check_dir(self, path: str) -> bool:
+    def check_dir(self, path: Path) -> bool:
         """检查目录是否存在
 
         Args:
@@ -85,4 +76,4 @@ class BaseProcessor(ABC):
         Returns:
             目录存在返回True，否则返回False
         """
-        return os.path.exists(path) and os.path.isdir(path)
+        return path.exists() and path.is_dir()
