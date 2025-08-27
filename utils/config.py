@@ -3,9 +3,10 @@
 提供一个经过验证的、支持属性式访问的配置类。
 """
 
-import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 
 class CameraConfig:
@@ -45,13 +46,21 @@ class Config:
 
         self._config = self._load_and_validate(path)
 
+        # 获取项目根目录（config.yaml所在目录）
+        self._project_root = path.parent
+
         # 将顶层键作为属性动态添加到实例上
         for key, value in self._config.items():
             if key == "camera":
                 setattr(self, key, CameraConfig(value))
             elif key in ["input", "output"]:
-                # 将输入输出路径转换为Path对象
-                setattr(self, key, Path(value))
+                # 将输入输出路径转换为Path对象，支持相对路径
+                path_obj = Path(value)
+                if path_obj.is_absolute():
+                    setattr(self, key, path_obj)
+                else:
+                    # 相对路径相对于项目根目录解析
+                    setattr(self, key, self._project_root / path_obj)
             else:
                 setattr(self, key, value)
 

@@ -7,16 +7,18 @@ Point Cloud数据处理模块
 """
 
 import pathlib
+from typing import Dict
+
 import cv2
 import numpy as np
-from tqdm import tqdm
-from typing import Dict
 from plyfile import PlyData
+from tqdm import tqdm
 
-from .base import BaseProcessor
-from utils import default_logger, data_io
+from utils import data_io, default_logger
 from utils.config import Config
 from utils.structures import TrajectoryData
+
+from .base import BaseProcessor
 
 
 class PointCloudProcessor(BaseProcessor):
@@ -105,21 +107,44 @@ class PointCloudProcessor(BaseProcessor):
                     image_height, image_width = images[i].shape[:2]
 
                     depth = self._generate_depth_map(
-                        xyzs_for_depth, vehicle_to_cam, intrinsics[i], image_width, image_height
+                        xyzs_for_depth,
+                        vehicle_to_cam,
+                        intrinsics[i],
+                        image_width,
+                        image_height,
                     )
 
                     # 保存深度图
-                    self._save_depth_map(depth, self.depth_output_path, frame_name, i, image_width, image_height)
+                    self._save_depth_map(
+                        depth,
+                        self.depth_output_path,
+                        frame_name,
+                        i,
+                        image_width,
+                        image_height,
+                    )
 
                     # 可视化深度图（仅对第一个相机）
                     if i == "0":
                         self._generate_depth_visualization(
-                            depth, self.depth_output_path, frame_name, i, image_width, image_height, images[i]
+                            depth,
+                            self.depth_output_path,
+                            frame_name,
+                            i,
+                            image_width,
+                            image_height,
+                            images[i],
                         )
 
                     # === RGB颜色获取部分（用于actor/background分离） ===
                     self._assign_rgb_colors(
-                        xyzs, rgbs, vehicle_to_cam, intrinsics[i], image_width, image_height, images[i]
+                        xyzs,
+                        rgbs,
+                        vehicle_to_cam,
+                        intrinsics[i],
+                        image_width,
+                        image_height,
+                        images[i],
                     )
 
                 # === Actor/Background分离部分 ===
@@ -420,7 +445,7 @@ class PointCloudProcessor(BaseProcessor):
                 masks_inbbox_expanded = masks_inbbox[..., None]
                 ply_actor_path = lidar_dir_actor / track_id / f"{frame_name}.ply"
                 try:
-                    data_io.storePly(
+                    data_io.save_ply(
                         ply_actor_path,
                         xyzs_inbbox,
                         rgbs_inbbox,
@@ -437,7 +462,7 @@ class PointCloudProcessor(BaseProcessor):
 
         ply_background_path = lidar_dir_background / f"{frame_name}.ply"
         try:
-            data_io.storePly(
+            data_io.save_ply(
                 ply_background_path,
                 xyzs_background,
                 rgbs_background,

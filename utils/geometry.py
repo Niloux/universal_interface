@@ -57,9 +57,7 @@ def transform_to_camera(points: np.ndarray, extrinsics: np.ndarray) -> np.ndarra
     return points_camera_homo[:, :3]
 
 
-def project_to_2d(
-    points_3d: np.ndarray, intrinsics: np.ndarray
-) -> Optional[np.ndarray]:
+def project_to_2d(points_3d: np.ndarray, intrinsics: np.ndarray) -> Optional[np.ndarray]:
     """
     将3D点投影到2D图像平面
 

@@ -16,10 +16,11 @@ import imageio
 import numpy as np
 from tqdm import tqdm
 
-from .base import BaseProcessor
-from utils import data_io, geometry, default_logger
+from utils import data_io, default_logger, geometry
 from utils.config import Config
 from utils.structures import Box3D, FrameObject, TrajectoryData
+
+from .base import BaseProcessor
 
 
 class TrackProcessor(BaseProcessor):
@@ -189,13 +190,11 @@ class TrackProcessor(BaseProcessor):
                 speeds.append(box.speed)
 
                 pose_vehicle = np.eye(4)
-                pose_vehicle[:3, :3] = np.array(
-                    [
-                        [math.cos(box.heading), -math.sin(box.heading), 0],
-                        [math.sin(box.heading), math.cos(box.heading), 0],
-                        [0, 0, 1],
-                    ]
-                )
+                pose_vehicle[:3, :3] = np.array([
+                    [math.cos(box.heading), -math.sin(box.heading), 0],
+                    [math.sin(box.heading), math.cos(box.heading), 0],
+                    [0, 0, 1],
+                ])
                 pose_vehicle[:3, 3] = np.array([box.center_x, box.center_y, box.center_z])
                 ego_pose = data_io.load_ego_pose(self.output_root_path, int(frame_name))
                 poses_vehicle.append(pose_vehicle.astype(np.float32))

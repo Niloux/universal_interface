@@ -6,15 +6,17 @@ Dynamic Mask数据处理模块
 该模块负责根据动态物体的轨迹，生成每个相机视角下的2D掩码图像。
 """
 
+from typing import Dict
+
 import cv2
 import numpy as np
 from tqdm import tqdm
-from typing import Dict
+
+from utils import data_io, default_logger, geometry
+from utils.config import Config
+from utils.structures import FrameObject, TrajectoryData
 
 from .base import BaseProcessor
-from utils import default_logger, data_io, geometry
-from utils.config import Config
-from utils.structures import TrajectoryData, FrameObject
 
 
 class DynamicMaskProcessor(BaseProcessor):
