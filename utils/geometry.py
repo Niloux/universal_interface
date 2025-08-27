@@ -3,38 +3,37 @@
 提供统一的3D到2D坐标变换、投影等功能。
 """
 
-import math
-from typing import Any, Dict, Optional
+from typing import Optional, Tuple
 
 import numpy as np
 
-def get_box_corners_3d(box_info: Dict[str, Any]) -> np.ndarray:
+from .structures import Box3D
+
+
+def get_box_corners_3d(box_info: Box3D) -> np.ndarray:
     """
     获取3D边界框的8个顶点坐标（主车坐标系）
 
     Args:
-        box_info: 边界框信息
+        box_info: 3D边界框数据对象
 
     Returns:
         np.ndarray: shape (8, 3)，8个顶点的3D坐标
     """
-    cx, cy, cz = box_info["center_x"], box_info["center_y"], box_info["center_z"]
-    length, width, height = box_info["length"], box_info["width"], box_info["height"]
-    heading = box_info["heading"]
-
-    x_corners = np.array([l / 2 for l in [length, length, -length, -length, length, length, -length, -length]])
-    y_corners = np.array([w / 2 for w in [-width, width, width, -width, -width, width, width, -width]])
-    z_corners = np.array([h / 2 for h in [-height, -height, -height, -height, height, height, height, height]])
+    l, w, h = box_info.length / 2, box_info.width / 2, box_info.height / 2  # noqa: E741
+    x_corners = np.array([l, l, -l, -l, l, l, -l, -l])
+    y_corners = np.array([-w, w, w, -w, -w, w, w, -w])
+    z_corners = np.array([-h, -h, -h, -h, h, h, h, h])
     
     corners = np.vstack([x_corners, y_corners, z_corners])
 
-    cos_h, sin_h = np.cos(heading), np.sin(heading)
+    cos_h, sin_h = np.cos(box_info.heading), np.sin(box_info.heading)
     rotation_matrix = np.array([[cos_h, -sin_h, 0], [sin_h, cos_h, 0], [0, 0, 1]])
     
     corners = rotation_matrix @ corners
-    corners[0, :] += cx
-    corners[1, :] += cy
-    corners[2, :] += cz
+    corners[0, :] += box_info.center_x
+    corners[1, :] += box_info.center_y
+    corners[2, :] += box_info.center_z
 
     return corners.T
 
@@ -78,17 +77,17 @@ def project_to_2d(points_3d: np.ndarray, intrinsics: np.ndarray) -> Optional[np.
         return None
 
 def project_box_to_image(
-    box_info: Dict[str, Any],
+    box_info: Box3D,
     extrinsics: np.ndarray,
     intrinsics: np.ndarray,
     img_shape: tuple,
-) -> tuple[bool, Optional[np.ndarray]]:
+) -> Tuple[bool, Optional[np.ndarray]]:
     """
     将3D边界框投影到图像，并检查可见性。
     这是一个集成了多个步骤的便捷函数。
 
     Args:
-        box_info: 3D边界框信息
+        box_info: 3D边界框数据对象
         extrinsics: 对应相机的外参 (4x4)
         intrinsics: 对应相机的内参 (3x3)
         img_shape: 图像尺寸 (height, width)

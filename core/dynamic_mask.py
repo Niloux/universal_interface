@@ -9,10 +9,12 @@ Dynamic Mask数据处理模块
 import cv2
 import numpy as np
 from tqdm import tqdm
+from typing import Dict
 
 from .base import BaseProcessor
 from utils import default_logger, data_io, geometry
 from utils.config import Config
+from utils.structures import TrajectoryData, FrameObject
 
 
 class DynamicMaskProcessor(BaseProcessor):
@@ -52,8 +54,8 @@ class DynamicMaskProcessor(BaseProcessor):
             default_logger.info("开始生成动态物体掩码...")
 
             # 1. 加载所需数据
-            trajectory_data = data_io.load_pickle(self.track_output_path / "trajectory.pkl")
-            track_info_data = data_io.load_pickle(self.track_output_path / "track_info.pkl")
+            trajectory_data: Dict[str, TrajectoryData] = data_io.load_pickle(self.track_output_path / "trajectory.pkl")
+            track_info_data: Dict[str, Dict[str, FrameObject]] = data_io.load_pickle(self.track_output_path / "track_info.pkl")
 
             if not trajectory_data or not track_info_data:
                 default_logger.warning("缺少轨迹或跟踪信息文件，跳过动态掩码生成。")
@@ -66,7 +68,7 @@ class DynamicMaskProcessor(BaseProcessor):
             dynamic_track_ids = {
                 track_id
                 for track_id, data in trajectory_data.items()
-                if not data.get("stationary", True)
+                if not data.stationary
             }
             default_logger.info(f"共识别出 {len(dynamic_track_ids)} 个动态物体。")
 
@@ -90,9 +92,9 @@ class DynamicMaskProcessor(BaseProcessor):
                     mask_image = np.zeros(img_shape, dtype=np.uint8)
 
                     # 筛选出当前帧可见的动态物体
-                    for track_id, box_info_dict in frame_objects.items():
+                    for track_id, frame_obj in frame_objects.items():
                         if track_id in dynamic_track_ids:
-                            box_info = box_info_dict.get("lidar_box")
+                            box_info = frame_obj.lidar_box
                             if not box_info:
                                 continue
 
