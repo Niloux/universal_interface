@@ -61,7 +61,7 @@ class PointCloudProcessor(BaseProcessor):
             default_logger.info(f"加载了{len(pointcloud_actor)}个actor")
 
             # 2. 处理lidar数据
-            point_clouds_path = self.config.input / "point_clouds"
+            point_clouds_path = self.config.input / "pointclouds"
             if not self.check_dir(point_clouds_path):
                 default_logger.error("点云输入目录为空")
                 return False

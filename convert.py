@@ -93,6 +93,94 @@ def labels_processor(file, output_dir):
             json.dump(objects, f, indent=2)
 
 
+def pointcloud_processor(input_file, output_dir):
+    """处理点云数据：从二进制PLY转换为ASCII PLY，并进行坐标转换"""
+    import os
+    import struct
+
+    try:
+        # 从文件名解析帧号和雷达ID
+        filename = Path(input_file).stem  # 例如: "000000_0"
+        frame_id, lidar_id = filename.split("_")
+
+        # 雷达ID到目录名的映射 - 根据用户提供的正确映射
+        lidar_to_dir = {
+            "0": "TOP",  # TOP是0
+            "1": "FRONT",  # FRONT是1
+            "2": "SIDE_LEFT",  # side_left是2
+            "3": "SIDE_RIGHT",  # side_right是3
+            "4": "REAR",  # rear是4
+        }
+
+        if lidar_id not in lidar_to_dir:
+            print(f"未知的雷达ID: {lidar_id}")
+            return
+
+        # 读取对应的lidar2ego转换矩阵
+        extrinsics_file = f"final_data/extrinsics_lidar/{lidar_id}.txt"
+        if not os.path.exists(extrinsics_file):
+            print(f"外参文件不存在: {extrinsics_file}")
+            return
+
+        # 读取4x4转换矩阵 (16个数字排成一行)
+        matrix_data = np.loadtxt(extrinsics_file)
+        lidar2ego = matrix_data.reshape(4, 4)
+
+        # 读取二进制PLY文件
+        with open(input_file, "rb") as f:
+            # 跳过PLY头部
+            line = f.readline().decode("ascii").strip()
+            while line != "end_header":
+                line = f.readline().decode("ascii").strip()
+
+            # 读取点云数据 (x, y, z, intensity)
+            # 每个点13字节: 3个float(x,y,z) + 1个uchar(intensity)
+            points_data = []
+            while True:
+                data = f.read(13)  # 3*4 + 1 = 13字节
+                if len(data) < 13:
+                    break
+                x, y, z = struct.unpack("<fff", data[:12])
+                intensity = struct.unpack("<B", data[12:13])[0]
+                points_data.append([x, y, z])
+
+        if not points_data:
+            print(f"文件 {input_file} 中没有点云数据")
+            return
+
+        # 转换为numpy数组并进行坐标变换
+        points = np.array(points_data)
+        # 添加齐次坐标
+        ones = np.ones((points.shape[0], 1))
+        points_homo = np.hstack([points, ones])
+
+        # 应用lidar2ego变换
+        points_ego = (lidar2ego @ points_homo.T).T
+        # 只保留x, y, z坐标
+        points_ego = points_ego[:, :3]
+
+        # 创建输出目录
+        sensor_dir = os.path.join(output_dir, lidar_to_dir[lidar_id])
+        os.makedirs(sensor_dir, exist_ok=True)
+
+        # 写入ASCII格式的PLY文件
+        output_file = os.path.join(sensor_dir, f"{frame_id}.ply")
+        with open(output_file, "w") as f:
+            f.write("ply\n")
+            f.write("format ascii 1.0\n")
+            f.write(f"element vertex {len(points_ego)}\n")
+            f.write("property float x\n")
+            f.write("property float y\n")
+            f.write("property float z\n")
+            f.write("end_header\n")
+
+            for point in points_ego:
+                f.write(f"{point[0]:.4f} {point[1]:.4f} {point[2]:.4f}\n")
+
+    except Exception as e:
+        print(f"处理文件 {input_file} 时出错: {e}")
+
+
 if __name__ == "__main__":
     base_input = Path("final_data")
     base_output = Path("required_data")
@@ -102,3 +190,4 @@ if __name__ == "__main__":
     process_files(base_input / "extrinsics_camera", base_output / "extrinsics", "*.txt", copy_processor)
     process_files(base_input / "intrinsics_camera", base_output / "intrinsics", "*.txt", copy_processor)
     process_files(base_input / "labels", base_output / "objects", "*.txt", labels_processor)
+    process_files(base_input / "pointclouds", base_output / "pointclouds", "*.ply", pointcloud_processor)
