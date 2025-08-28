@@ -63,6 +63,36 @@ def copy_processor(file, output_dir):
     shutil.copy2(file, output_dir / file.name)
 
 
+def labels_processor(file, output_dir):
+    """将标签txt文件转换为按帧分组的JSON格式的处理器"""
+    import json
+    from collections import defaultdict
+
+    # 按帧ID分组存储对象
+    frames = defaultdict(list)
+
+    with open(file, "r") as f:
+        for line in f:
+            parts = line.strip().split(", ")
+            if len(parts) >= 9:
+                frame_id, obj_id, obj_type, x, y, z, l, w, h, heading = parts[:10]  # noqa: E741
+
+                obj = {
+                    "track_id": obj_id,
+                    "label": f"type_{obj_type}",
+                    "box3d_center": [float(x), float(y), float(z)],
+                    "box3d_size": [float(l), float(w), float(h)],
+                    "box3d_heading": float(heading),
+                }
+                frames[frame_id].append(obj)
+
+    # 为每个帧生成单独的JSON文件
+    for frame_id, objects in frames.items():
+        output_file = output_dir / f"{frame_id}.json"
+        with open(output_file, "w") as f:
+            json.dump(objects, f, indent=2)
+
+
 if __name__ == "__main__":
     base_input = Path("final_data")
     base_output = Path("required_data")
@@ -71,3 +101,4 @@ if __name__ == "__main__":
     process_files(base_input / "images", base_output / "images", "*.png", image_processor)
     process_files(base_input / "extrinsics_camera", base_output / "extrinsics", "*.txt", copy_processor)
     process_files(base_input / "intrinsics_camera", base_output / "intrinsics", "*.txt", copy_processor)
+    process_files(base_input / "labels", base_output / "objects", "*.txt", labels_processor)
