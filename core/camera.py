@@ -9,10 +9,9 @@ Camera数据处理模块
 
 """
 
-import json
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import List
 
 from tqdm import tqdm
 
@@ -45,7 +44,8 @@ class CameraProcessor(BaseProcessor):
 
         # 定义输入路径
         self.images_path = self.input_path / "images"
-        self.metadata_path = self.input_path / "images_metadata"
+        self.extrinsics_path = self.input_path / "extrinsics"
+        self.intrinsics_path = self.input_path / "intrinsics"
 
         default_logger.info(f"初始化相机处理器，支持 {len(self.camera_positions)} 个相机位置")
 
@@ -92,22 +92,18 @@ class CameraProcessor(BaseProcessor):
         for camera_position in self.camera_positions:
             camera_id = self.camera_id_map[camera_position]
 
-            # 获取第一个元数据文件作为参考（假设相机参数在整个序列中是固定的）
-            metadata_files = self._get_metadata_files(camera_position)
-            if not metadata_files:
-                continue
-
-            # 读取第一个元数据文件
-            with open(metadata_files[0], "r") as f:
-                metadata = json.load(f)
+            with open(self.extrinsics_path / f"{camera_id}.txt", "r") as f:
+                extrinsics = f.read()
+            with open(self.intrinsics_path / f"{camera_id}.txt", "r") as f:
+                intrinsics = f.read()
 
             # 生成内参文件
             intrinsics_file = intrinsics_output_dir / f"{camera_id}.txt"
-            self._write_intrinsics_file(metadata, intrinsics_file)
+            self._write_intrinsics_file(intrinsics, intrinsics_file)
 
             # 生成外参文件
             extrinsics_file = extrinsics_output_dir / f"{camera_id}.txt"
-            self._write_extrinsics_file(metadata, extrinsics_file)
+            self._write_extrinsics_file(extrinsics, extrinsics_file)
 
         default_logger.info("相机参数文件生成完成")
 
@@ -131,27 +127,6 @@ class CameraProcessor(BaseProcessor):
                 image_files.append(item)
 
         return sorted(image_files)
-
-    def _get_metadata_files(self, camera_position: str) -> List[Path]:
-        """
-        获取元数据文件列表
-
-        Args:
-            camera_position: 相机位置
-
-        Returns:
-            元数据文件路径列表
-        """
-        metadata_dir = self.metadata_path / camera_position
-        if not metadata_dir.exists():
-            return []
-
-        metadata_files = []
-        for item in metadata_dir.iterdir():
-            if item.is_file() and item.suffix.lower() == ".json":
-                metadata_files.append(item)
-
-        return sorted(metadata_files)
 
     def _process_images(self, images_output_dir: Path):
         """
@@ -187,32 +162,18 @@ class CameraProcessor(BaseProcessor):
                     except Exception as e:
                         default_logger.error(f"处理图像文件 {source_file} 时出错: {e}")
 
-    def _write_intrinsics_file(self, metadata: Dict[str, Any], output_file: Path):
+    def _write_intrinsics_file(self, intrinsics: str, output_file: Path):
         """
         写入内参文件
 
         Args:
-            metadata: 元数据字典
+            intrinsics: 相机内参数据（一行空格分隔）
             output_file: 输出文件路径
         """
-        intrinsics = metadata.get("intrinsics", [])
+        intrinsics = [float(x) for x in intrinsics.strip().split()]
 
-        # 如果是列表格式 [fx, fy, cx, cy, k1, k2, p1, p2, k3]
-        if isinstance(intrinsics, list) and len(intrinsics) >= 9:
-            fx, fy, cx, cy, k1, k2, p1, p2, k3 = intrinsics[:9]
-        else:
-            # 如果是字典格式，提取参数
-            fx = intrinsics.get("focal_length", {}).get("fx", 0.0)
-            fy = intrinsics.get("focal_length", {}).get("fy", 0.0)
-            cx = intrinsics.get("principal_point", {}).get("cx", 0.0)
-            cy = intrinsics.get("principal_point", {}).get("cy", 0.0)
-
-            distortion = intrinsics.get("distortion_coefficients", {})
-            k1 = distortion.get("k1", 0.0)
-            k2 = distortion.get("k2", 0.0)
-            p1 = distortion.get("p1", 0.0)
-            p2 = distortion.get("p2", 0.0)
-            k3 = distortion.get("k3", 0.0)
+        fx, _, cx, _, fy, cy, _, _, _ = intrinsics[:9]
+        _x = 0
 
         # 写入文件，每行一个参数
         with open(output_file, "w") as f:
@@ -220,31 +181,32 @@ class CameraProcessor(BaseProcessor):
             f.write(f"{fy:.18e}\n")
             f.write(f"{cx:.18e}\n")
             f.write(f"{cy:.18e}\n")
-            f.write(f"{k1:.18e}\n")
-            f.write(f"{k2:.18e}\n")
-            f.write(f"{p1:.18e}\n")
-            f.write(f"{p2:.18e}\n")
-            f.write(f"{k3:.18e}\n")
+            f.write(f"{_x:.18e}\n")
+            f.write(f"{_x:.18e}\n")
+            f.write(f"{_x:.18e}\n")
+            f.write(f"{_x:.18e}\n")
+            f.write(f"{_x:.18e}\n")
 
-    def _write_extrinsics_file(self, metadata: Dict[str, Any], output_file: Path):
+    def _write_extrinsics_file(self, extrinsics: str, output_file: Path):
         """
         写入外参文件
 
         Args:
-            metadata: 元数据字典
+            extrinsics: 相机外参数据（一行空格分隔）
             output_file: 输出文件路径
         """
-        extrinsics = metadata.get("extrinsics", [])
+        extrinsics = [float(x) for x in extrinsics.strip().split()]
 
-        # 如果是列表格式（4x4矩阵）
-        if isinstance(extrinsics, list) and len(extrinsics) == 4:
-            transform_matrix = extrinsics
-        else:
-            # 如果是字典格式，提取变换矩阵
-            transform_matrix = extrinsics.get("transformation_matrix", [])
+        # 确保有16个数字可以构成4x4矩阵
+        if len(extrinsics) != 16:
+            raise ValueError(f"输入数据必须包含16个数字以构成4x4矩阵，当前数量: {len(extrinsics)}")
 
-        # 写入文件，4x4矩阵格式
-        with open(output_file, "w") as f:
-            for row in transform_matrix:
-                row_str = " ".join([f"{val:.18e}" for val in row])
-                f.write(f"{row_str}\n")
+        # 构建4x4矩阵字符串
+        matrix_str = ""
+        for i in range(0, 16, 4):
+            # 每行4个数字，保留6位小数，用空格分隔
+            row = " ".join(f"{num:.6f}" for num in extrinsics[i : i + 4])
+            matrix_str += row + "\n"
+
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(matrix_str.strip())

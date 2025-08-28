@@ -12,3 +12,5 @@ wheels/
 input/
 output/
 test/
+final_data/
+required_data/

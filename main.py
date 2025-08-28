@@ -3,13 +3,11 @@
 3DGS训练通用数据接口，将自定义数据集转换成3DGS训练数据格式。
 """
 
+from core.camera import CameraProcessor
+from core.ego_pose import EgoPoseProcessor
+from core.track import TrackProcessor
 from utils.config import Config
 from utils.logger import default_logger
-from core.ego_pose import EgoPoseProcessor
-from core.camera import CameraProcessor
-from core.track import TrackProcessor
-from core.lidar import PointCloudProcessor
-from core.dynamic_mask import DynamicMaskProcessor
 
 
 def main() -> int:
@@ -26,8 +24,8 @@ def main() -> int:
             (EgoPoseProcessor, "Ego-Pose数据处理"),
             (CameraProcessor, "相机内外参及图像处理"),
             (TrackProcessor, "轨迹和动态物体处理"),
-            (PointCloudProcessor, "激光雷达数据处理"),
-            (DynamicMaskProcessor, "动态物体掩码生成"),
+            # (PointCloudProcessor, "激光雷达数据处理"),
+            # (DynamicMaskProcessor, "动态物体掩码生成"),
         ]
 
         for processor_class, name in processors:

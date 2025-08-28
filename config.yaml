@@ -7,6 +7,6 @@ camera:
     SIDE_LEFT: 3
     SIDE_RIGHT: 4
 
-input: "input"
-output: "test"
+input: "required_data"
+output: "test2"
 
