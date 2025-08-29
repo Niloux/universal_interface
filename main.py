@@ -4,6 +4,7 @@
 """
 
 from core.camera import CameraProcessor
+from core.dynamic_mask import DynamicMaskProcessor
 from core.ego_pose import EgoPoseProcessor
 from core.lidar import PointCloudProcessor
 from core.track import TrackProcessor
@@ -26,7 +27,7 @@ def main() -> int:
             (CameraProcessor, "相机内外参及图像处理"),
             (TrackProcessor, "轨迹和动态物体处理"),
             (PointCloudProcessor, "激光雷达数据处理"),
-            # (DynamicMaskProcessor, "动态物体掩码生成"),
+            (DynamicMaskProcessor, "动态物体掩码生成"),
         ]
 
         for processor_class, name in processors:
