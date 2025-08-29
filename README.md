@@ -20,7 +20,8 @@
 universal_interface/
 ├── .gitignore           # Git忽略文件
 ├── config.yaml          # 核心配置文件
-├── main.py              # 主程序入口
+├── convert.py           # 数据格式转换脚本 (第一步)
+├── main.py              # 3DGS训练数据生成主程序 (第二步)
 ├── pkl2json.py          # (可选) Pickle转JSON工具
 ├── pyproject.toml       # 项目依赖与配置 (uv)
 ├── README.md            # 项目说明文档
@@ -29,53 +30,79 @@ universal_interface/
 │   ├── camera.py        # 相机内外参及图像处理器
 │   ├── dynamic_mask.py  # 动态物体掩码生成器
 │   ├── ego_pose.py      # 自车位姿处理器
+│   ├── lidar.py         # 激光雷达数据处理器
 │   └── track.py         # 3D物体轨迹处理器
-├── input/               # 原始数据输入目录 (需按约定格式存放)
+├── final_data/          # 原始数据输入目录
+│   ├── poses/           # 自车位姿文件
+│   ├── images/          # 原始图像文件
+│   ├── extrinsics_camera/ # 相机外参文件
+│   ├── intrinsics_camera/ # 相机内参文件
+│   ├── labels/          # 物体标签文件
+│   ├── pointclouds/     # 点云文件
+│   └── extrinsics_lidar/ # 激光雷达外参文件
+├── required_data/       # 转换后的标准数据目录 (convert.py输出)
 │   ├── ego_pose/
 │   ├── images/
-│   ├── images_metadata/
-│   └── objects/
-├── output/              # 处理结果输出目录
+│   ├── extrinsics/
+│   ├── intrinsics/
+│   ├── objects/
+│   └── pointclouds/
+├── output/              # 最终3DGS训练数据输出目录 (main.py输出)
 │   ├── dynamic_mask/
 │   ├── ego_pose/
 │   ├── extrinsics/
 │   ├── images/
 │   ├── intrinsics/
 │   └── track/
-├── utils/               # 工具模块
-│   ├── config.py        # 配置加载与管理
-│   ├── data_io.py       # 数据读写工具
-│   ├── geometry.py      # 几何变换工具
-│   ├── logger.py        # 日志工具
-│   └── structures.py    # 自定义数据结构
-└── test/                # 测试代码目录
+└── utils/               # 工具模块
+    ├── config.py        # 配置加载与管理
+    ├── data_io.py       # 数据读写工具
+    ├── geometry.py      # 几何变换工具
+    ├── logger.py        # 日志工具
+    └── structures.py    # 自定义数据结构
 ```
 
 ## 数据处理流水线
 
-程序通过 `main.py` 启动，并按以下顺序执行数据处理：
+项目采用两步处理流程：
 
-1.  **EgoPoseProcessor**: 处理自车位姿数据。
-2.  **CameraProcessor**: 处理相机内外参和图像数据，将其转换为标准格式。
-3.  **TrackProcessor**: 分析3D物体数据，计算轨迹，并区分动态与静态物体。
-4.  **DynamicMaskProcessor**: 基于轨迹信息，为动态物体生成2D图像掩码。
+### 第一步：数据格式转换 (`convert.py`)
+
+将原始输入数据转换为标准化的数据结构：
+
+1. **Pose数据转换**: 将16个数字的pose文件转换为4x4变换矩阵格式
+2. **图像文件重组**: 将 `XXXXXX_Y.png` 格式的图像按相机分组并重命名为 `camera_name/XXXXXX.jpg`
+3. **相机参数复制**: 直接复制相机内外参文件到标准目录
+4. **标签数据转换**: 将txt格式的标签文件转换为按帧分组的JSON格式
+5. **点云数据处理**: 将二进制PLY文件转换为ASCII格式并进行坐标变换
+
+### 第二步：3DGS训练数据生成 (`main.py`)
+
+基于转换后的标准数据，按以下顺序执行处理：
+
+1. **EgoPoseProcessor**: 处理自车位姿数据
+2. **CameraProcessor**: 处理相机内外参和图像数据，将其转换为3DGS训练格式
+3. **TrackProcessor**: 分析3D物体数据，计算轨迹，并区分动态与静态物体
+4. **PointCloudProcessor**: 处理激光雷达点云数据
+5. **DynamicMaskProcessor**: 基于轨迹信息，为动态物体生成2D图像掩码
 
 ## 核心组件
 
-### 处理器 (Processors)
+### 数据转换模块 (`convert.py`)
 
-- **`EgoPoseProcessor`**: 读取、转换并输出自车位姿（Ego-Pose）数据。
-- **`CameraProcessor`**:
-    - 读取多相机元数据，生成独立的内外参文件。
-    - 复制并重命名图像文件，以符合 `frame_id_camera_id.png` 的格式。
-- **`TrackProcessor`**:
-    - 从原始物体数据中构建每个物体的3D轨迹。
-    - 判断物体是动态还是静态。
-    - 保存轨迹信息、可见性等数据为 Pickle 和 JSON 文件。
-- **`DynamicMaskProcessor`**:
-    - 加载轨迹数据和相机参数。
-    - 将动态物体的3D边界框投影到每个相机的2D图像平面上。
-    - 生成并保存对应的2D分割掩码图像。
+- **`pose_processor`**: 将16个数字的pose文件转换为4x4变换矩阵格式
+- **`image_processor`**: 将 `XXXXXX_Y.png` 格式的图像按相机分组并重命名
+- **`copy_processor`**: 直接复制相机内外参文件到标准目录
+- **`labels_processor`**: 将txt格式的标签文件转换为按帧分组的JSON格式
+- **`pointcloud_processor`**: 将二进制PLY文件转换为ASCII格式并进行坐标变换
+
+### 3DGS训练数据处理器 (Processors)
+
+- **`EgoPoseProcessor`**: 读取、转换并输出自车位姿（Ego-Pose）数据
+- **`CameraProcessor`**: 处理相机内外参和图像数据，将其转换为3DGS训练格式
+- **`TrackProcessor`**: 从标准化物体数据中构建每个物体的3D轨迹，判断动静态，保存轨迹信息
+- **`PointCloudProcessor`**: 处理激光雷达点云数据，转换为3DGS训练所需格式
+- **`DynamicMaskProcessor`**: 基于轨迹数据生成动态物体的2D分割掩码图像
 
 ### 工具模块 (Utils)
 
@@ -102,7 +129,18 @@ uv sync
 
 ### 2. 准备数据
 
-将你的自定义数据集按照 `input/` 目录下的结构进行组织。确保 `images`, `images_metadata`, `objects`, `ego_pose` 等子目录中包含所需的数据文件。
+将你的原始数据集按照以下结构组织在 `final_data/` 目录下：
+
+```
+final_data/
+├── poses/              # 自车位姿文件 (16个数字的txt文件)
+├── images/             # 原始图像文件 (XXXXXX_Y.png格式)
+├── extrinsics_camera/  # 相机外参文件
+├── intrinsics_camera/  # 相机内参文件
+├── labels/             # 物体标签文件 (txt格式)
+├── pointclouds/        # 点云文件 (二进制PLY格式)
+└── extrinsics_lidar/   # 激光雷达外参文件
+```
 
 ### 3. 修改配置
 
@@ -116,13 +154,27 @@ uv sync
 
 ### 4. 运行程序
 
-完成配置后，在项目根目录运行主程序：
+完成配置后，需要按顺序执行两个步骤：
+
+#### 步骤1：数据格式转换
+
+首先运行数据转换脚本，将原始数据转换为标准格式：
+
+```bash
+uv run python convert.py
+```
+
+此步骤会将 `final_data/` 目录下的原始数据转换并保存到 `required_data/` 目录。
+
+#### 步骤2：3DGS训练数据生成
+
+然后运行主程序进行最终的数据处理：
 
 ```bash
 uv run python main.py
 ```
 
-处理完成后，所有生成的数据将保存在你指定的 `output` 目录中。
+处理完成后，所有生成的3DGS训练数据将保存在你指定的 `output` 目录中。
 
 ## 扩展开发
 
