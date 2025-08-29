@@ -32,7 +32,7 @@ universal_interface/
 │   ├── ego_pose.py      # 自车位姿处理器
 │   ├── lidar.py         # 激光雷达数据处理器
 │   └── track.py         # 3D物体轨迹处理器
-├── final_data/          # 原始数据输入目录
+├── input/               # 原始数据输入目录
 │   ├── poses/           # 自车位姿文件
 │   ├── images/          # 原始图像文件
 │   ├── extrinsics_camera/ # 相机外参文件
