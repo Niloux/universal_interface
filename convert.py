@@ -27,10 +27,22 @@ def process_files(input_dir, output_dir, pattern, processor):
 
 
 def pose_processor(file, output_dir):
-    """处理pose文件：16个数字转4x4矩阵"""
-    numbers = [float(x) for x in file.read_text().strip().split()]
-    if len(numbers) != 16:
-        raise ValueError(f"期望16个数字，实际{len(numbers)}个")
+    """处理pose文件：将数字序列转换为4x4矩阵并写出。
+
+    - 若文件包含16个数字，则直接按行填充为4x4矩阵；
+    - 若文件包含12个数字，则在末尾补齐 `0, 0, 0, 1` 形成16个数字，再转换为4x4矩阵；
+    - 其他长度的数字则视为格式错误并报错。
+    """
+    tokens = file.read_text().strip().split()
+    numbers = [float(x) for x in tokens]
+
+    if len(numbers) == 16:
+        pass  # 直接使用
+    elif len(numbers) == 12:
+        # 在末尾补齐 0, 0, 0, 1，得到 4x4 齐次变换矩阵
+        numbers += [0.0, 0.0, 0.0, 1.0]
+    else:
+        raise ValueError(f"期望12或16个数字，实际{len(numbers)}个")
 
     matrix = np.array(numbers).reshape(4, 4)
     output_file = output_dir / file.name
@@ -42,7 +54,7 @@ def pose_processor(file, output_dir):
 
 def image_processor(file, output_dir):
     """处理图像文件：XXXXXX_Y.png -> camera_name/XXXXXX.jpg"""
-    cameras = {"0": "FRONT", "1": "FRONT_LEFT", "2": "FRONT_RIGHT", "3": "SIDE_LEFT", "4": "SIDE_RIGHT"}
+    cameras = {"0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6"}
 
     parts = file.stem.split("_")
     if len(parts) != 2:
@@ -64,19 +76,41 @@ def copy_processor(file, output_dir):
 
 
 def labels_processor(file, output_dir):
-    """将标签txt文件转换为按帧分组的JSON格式的处理器"""
+    """将标签txt文件转换为按帧分组的JSON格式。
+
+    解析规则：
+    - 支持以逗号分隔（",")或以空白分隔（空格/制表符）的行；
+    - 每行期望字段顺序为：frame_id, track_id, obj_type, x, y, z, l, w, h, heading；
+    - 输出文件以帧ID命名为 {frame_id}.json；若输入文件名为纯数字（如 000000.txt），
+      则对帧ID进行同宽零填充，以保持与输入文件名一致（如将 0 写为 000000.json）。
+    """
     import json
     from collections import defaultdict
 
     # 按帧ID分组存储对象
     frames = defaultdict(list)
 
-    with open(file, "r") as f:
-        for line in f:
-            parts = line.strip().split(", ")
-            if len(parts) >= 9:
-                frame_id, obj_id, obj_type, x, y, z, l, w, h, heading = parts[:10]  # noqa: E741
+    # 若输入文件名为纯数字，则记录其宽度用于输出文件名零填充
+    stem = file.stem
+    pad_width = len(stem) if stem.isdigit() else None
 
+    with open(file, "r") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            # 兼容两种分隔符：优先尝试逗号分隔，否则按任意空白分隔
+            parts = [p.strip() for p in line.split(",")] if "," in line else line.split()
+
+            # 至少需要10个字段（frame_id, track_id, obj_type, x, y, z, l, w, h, heading）
+            if len(parts) < 10:
+                # 跳过格式不正确的行
+                continue
+
+            frame_id, obj_id, obj_type, x, y, z, l, w, h, heading = parts[:10]
+
+            try:
                 obj = {
                     "track_id": obj_id,
                     "label": f"type_{obj_type}",
@@ -84,17 +118,27 @@ def labels_processor(file, output_dir):
                     "box3d_size": [float(l), float(w), float(h)],
                     "box3d_heading": float(heading),
                 }
-                frames[frame_id].append(obj)
+            except ValueError:
+                # 数值解析失败则跳过该行
+                continue
+
+            frames[frame_id].append(obj)
 
     # 为每个帧生成单独的JSON文件
-    for frame_id, objects in frames.items():
-        output_file = output_dir / f"{frame_id}.json"
+    for fid, objects in frames.items():
+        # 若需零填充且帧ID为数字，则按输入文件名宽度填充
+        out_name = fid.zfill(pad_width) if pad_width and fid.isdigit() else fid
+        output_file = output_dir / f"{out_name}.json"
         with open(output_file, "w") as f:
             json.dump(objects, f, indent=2)
 
 
 def pointcloud_processor(input_file, output_dir):
-    """处理点云数据：从二进制PLY转换为ASCII PLY，并进行坐标转换"""
+    """处理点云数据：从二进制PLY转换为ASCII PLY，并进行坐标转换。
+
+    当对应雷达的外参文件不存在时，认为输入点云已在主车（ego）坐标系下，
+    将跳过坐标转换（等效使用单位矩阵）。
+    """
     import os
     import struct
 
@@ -118,13 +162,15 @@ def pointcloud_processor(input_file, output_dir):
 
         # 读取对应的lidar2ego转换矩阵
         extrinsics_file = f"final_data/extrinsics_lidar/{lidar_id}.txt"
-        if not os.path.exists(extrinsics_file):
-            print(f"外参文件不存在: {extrinsics_file}")
-            return
-
-        # 读取4x4转换矩阵 (16个数字排成一行)
-        matrix_data = np.loadtxt(extrinsics_file)
-        lidar2ego = matrix_data.reshape(4, 4)
+        if os.path.exists(extrinsics_file):
+            # 读取4x4转换矩阵 (16个数字排成一行)
+            matrix_data = np.loadtxt(extrinsics_file)
+            lidar2ego = matrix_data.reshape(4, 4)
+        else:
+            # 外参不存在时，认为点云已在主车坐标系下，不进行坐标转换
+            # 使用4x4单位矩阵作为lidar2ego，等效于不做变换
+            print(f"外参文件不存在: {extrinsics_file}，认为点云已在主车坐标系下，跳过坐标转换")
+            lidar2ego = np.eye(4, dtype=float)
 
         # 读取二进制PLY文件
         with open(input_file, "rb") as f:
@@ -182,11 +228,11 @@ def pointcloud_processor(input_file, output_dir):
 
 
 if __name__ == "__main__":
-    base_input = Path("final_data")
+    base_input = Path("input")
     base_output = Path("required_data")
 
     process_files(base_input / "poses", base_output / "ego_pose", "*.txt", pose_processor)
-    process_files(base_input / "images", base_output / "images", "*.png", image_processor)
+    process_files(base_input / "images", base_output / "images", "*.jpg", image_processor)
     process_files(base_input / "extrinsics_camera", base_output / "extrinsics", "*.txt", copy_processor)
     process_files(base_input / "intrinsics_camera", base_output / "intrinsics", "*.txt", copy_processor)
     process_files(base_input / "labels", base_output / "objects", "*.txt", labels_processor)

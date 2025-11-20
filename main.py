@@ -23,11 +23,11 @@ def main() -> int:
 
         # -- 按顺序显式执行数据处理流水线 --
         processors = [
-            (EgoPoseProcessor, "Ego-Pose数据处理"),
-            (CameraProcessor, "相机内外参及图像处理"),
-            (TrackProcessor, "轨迹和动态物体处理"),
+            # (EgoPoseProcessor, "Ego-Pose数据处理"),
+            # (CameraProcessor, "相机内外参及图像处理"),
+            # (TrackProcessor, "轨迹和动态物体处理"),
+            # (DynamicMaskProcessor, "动态物体掩码生成"),
             (PointCloudProcessor, "激光雷达数据处理"),
-            (DynamicMaskProcessor, "动态物体掩码生成"),
         ]
 
         for processor_class, name in processors:

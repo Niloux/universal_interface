@@ -1,12 +1,14 @@
 camera:
-  positions: ["FRONT", "FRONT_LEFT", "FRONT_RIGHT", "SIDE_LEFT", "SIDE_RIGHT"]
+  positions: [0, 1, 2, 3, 4, 5, 6]
   id_map:
-    FRONT: 0
-    FRONT_LEFT: 1
-    FRONT_RIGHT: 2
-    SIDE_LEFT: 3
-    SIDE_RIGHT: 4
+    0: 0
+    1: 1
+    2: 2
+    3: 3
+    4: 4
+    5: 5
+    6: 6
 
 input: "required_data"
-output: "test2"
+output: "output"
 

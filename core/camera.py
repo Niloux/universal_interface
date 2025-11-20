@@ -117,7 +117,8 @@ class CameraProcessor(BaseProcessor):
         Returns:
             图像文件路径列表
         """
-        images_dir = self.images_path / camera_position
+        # 相机位置在配置中可能为整数，这里统一转为字符串以拼接路径
+        images_dir = self.images_path / str(camera_position)
         if not images_dir.exists():
             return []
 
@@ -149,7 +150,8 @@ class CameraProcessor(BaseProcessor):
                 camera_id = self.camera_id_map[camera_position]
 
                 # 源图像文件
-                input_dir = self.images_path / camera_position
+                # 相机位置在配置中可能为整数，这里统一转为字符串以拼接路径
+                input_dir = self.images_path / str(camera_position)
                 source_file = input_dir / f"{frame_name}.jpg"
 
                 if source_file.exists():
@@ -196,6 +198,9 @@ class CameraProcessor(BaseProcessor):
             output_file: 输出文件路径
         """
         extrinsics = [float(x) for x in extrinsics.strip().split()]
+
+        if len(extrinsics) == 12:
+            extrinsics += [0.0, 0.0, 0.0, 1.0]
 
         # 确保有16个数字可以构成4x4矩阵
         if len(extrinsics) != 16:

@@ -109,7 +109,28 @@ class TrackProcessor(BaseProcessor):
                 )
 
             if all(cam_id in images for cam_id in ["0", "1", "2"]):
-                vis_img = np.concatenate([images["1"], images["0"], images["2"]], axis=1)
+                # 将用于可视化的三路图像统一到相同高度后再拼接，避免维度不一致导致报错
+                imgs = [images["1"], images["0"], images["2"]]
+                target_h = min(img.shape[0] for img in imgs)  # 选择最小高度以避免放大导致失真
+
+                def _resize_to_height(image: np.ndarray, target_height: int) -> np.ndarray:
+                    """将图像按保持宽高比缩放到指定高度。
+
+                    Args:
+                        image: 输入图像（RGB，H×W×3）
+                        target_height: 目标高度
+
+                    Returns:
+                        缩放后的图像，宽度按比例调整
+                    """
+                    h, w = image.shape[:2]
+                    if h == target_height:
+                        return image
+                    new_w = int(round(w * (target_height / h)))
+                    return cv2.resize(image, (new_w, target_height), interpolation=cv2.INTER_AREA)
+
+                resized_imgs = [_resize_to_height(img, target_h) for img in imgs]
+                vis_img = np.concatenate(resized_imgs, axis=1)
                 track_vis_imgs.append(vis_img)
 
         return {
