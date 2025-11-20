@@ -109,7 +109,7 @@ def labels_processor(file, output_dir):
                 # 跳过格式不正确的行
                 continue
 
-            frame_id, obj_id, obj_type, x, y, z, l, w, h, heading = parts[:10]
+            frame_id, obj_id, obj_type, x, y, z, l, w, h, heading = parts[:10]  # noqa: E741
 
             try:
                 obj = {

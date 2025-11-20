@@ -106,6 +106,9 @@ class EgoPoseProcessor(BaseProcessor):
         with open(output_file_path, "w", encoding="utf-8") as f:
             f.write(processed_data)
 
+        # 生成带相机编号的副本文件
+        self._write_duplicates(file_path.stem, processed_data)
+
     def _transform_data(self, data: str) -> str:
         """转换数据格式
 
@@ -116,3 +119,61 @@ class EgoPoseProcessor(BaseProcessor):
             转换后的数据内容
         """
         return data
+
+    def _write_duplicates(self, frame_stem: str, content: str) -> None:
+        """为指定帧生成副本文件
+
+        将 `frame_stem.txt` 的内容复制到 `frame_stem_{i}.txt`，其中 i 来自相机id映射，
+        默认为配置中的 `camera.id_map` 值集合。
+
+        Args:
+            frame_stem: 帧文件名的前缀（不含扩展名）
+            content: 要写入副本的文本内容
+        """
+        try:
+            ids = sorted({int(v) for v in self.config.camera.id_map.values()})
+        except Exception:
+            ids = list(range(7))
+
+        for cam_id in ids:
+            dup_path = self.output_path / f"{frame_stem}_{cam_id}.txt"
+            try:
+                with open(dup_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            except OSError as e:
+                default_logger.error(f"写入副本文件失败: {dup_path} -> {e}")
+
+    def replicate_output_files(self) -> None:
+        """为现有输出目录中的所有ego_pose帧生成副本文件
+
+        遍历 `output/ego_pose` 下的 `XXXXXX.txt` 文件，为每个文件生成
+        `XXXXXX_{i}.txt` 的副本，`i` 取自 `camera.id_map` 的值集合或 0..6。
+        """
+        if not self.check_dir(self.output_path):
+            default_logger.warning(f"输出目录不存在: {self.output_path}")
+            return
+
+        try:
+            ids = sorted({int(v) for v in self.config.camera.id_map.values()})
+        except Exception:
+            ids = list(range(7))
+
+        files = [p for p in self.output_path.iterdir() if p.is_file() and p.suffix == ".txt" and "_" not in p.stem]
+        if not files:
+            default_logger.info("没有找到需要复制的ego_pose基础文件")
+            return
+
+        for base_file in files:
+            try:
+                with open(base_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+                frame_stem = base_file.stem
+                for cam_id in ids:
+                    dup_path = self.output_path / f"{frame_stem}_{cam_id}.txt"
+                    with open(dup_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+            except Exception as e:
+                default_logger.error(f"复制 {base_file.name} 失败: {e}")
+                continue
+
+        default_logger.success("ego_pose副本文件生成完成")
