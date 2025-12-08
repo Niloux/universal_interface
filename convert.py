@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 import numpy as np
-from plyfile import PlyData
+from plyfile import PlyData, PlyElement
 
 
 def process_files(input_dir, output_dir, pattern, processor):
@@ -135,13 +135,7 @@ def labels_processor(file, output_dir):
 
 
 def pointcloud_processor(input_file, output_dir):
-    """处理点云数据：将输入PLY统一转换为ASCII PLY，不做坐标转换。
-
-    输入点云被视为已在主车（ego）坐标系，直接读取 `x, y, z` 并写出。
-    支持二进制或ASCII PLY，使用 `plyfile` 可靠解析点属性。
-    """
-    import os
-
+    """处理点云为 ASCII PLY：从输入 PLY 读取并仅保留 x/y/z，按帧与雷达ID组织输出。"""
     try:
         filename = Path(input_file).stem
         frame_id, lidar_id = filename.split("_")
@@ -153,7 +147,6 @@ def pointcloud_processor(input_file, output_dir):
             "3": "SIDE_RIGHT",
             "4": "REAR",
         }
-
         if lidar_id not in lidar_to_dir:
             print(f"未知的雷达ID: {lidar_id}")
             return
@@ -163,25 +156,25 @@ def pointcloud_processor(input_file, output_dir):
             print(f"PLY缺少vertex元素: {input_file}")
             return
         vertices = ply["vertex"].data
-        points = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1)
+        if not {"x", "y", "z"}.issubset(vertices.dtype.names):
+            print(f"vertex缺少x/y/z属性: {input_file}")
+            return
 
-        points_ego = points
+        # NOTE:这里假设点云已经转换为ego坐标系
+        points_ego = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1)
 
-        sensor_dir = os.path.join(output_dir, lidar_to_dir[lidar_id])
-        os.makedirs(sensor_dir, exist_ok=True)
+        sensor_dir = Path(output_dir) / lidar_to_dir[lidar_id]
+        sensor_dir.mkdir(parents=True, exist_ok=True)
+        output_file = sensor_dir / f"{frame_id}.ply"
 
-        output_file = os.path.join(sensor_dir, f"{frame_id}.ply")
-        with open(output_file, "w") as f:
-            f.write("ply\n")
-            f.write("format ascii 1.0\n")
-            f.write(f"element vertex {len(points_ego)}\n")
-            f.write("property float x\n")
-            f.write("property float y\n")
-            f.write("property float z\n")
-            f.write("end_header\n")
-            for point in points_ego:
-                f.write(f"{point[0]:.6f} {point[1]:.6f} {point[2]:.6f}\n")
+        # 创建结构化数组，明确属性类型为 float32（PLY 的 'float'）
+        vertex = np.empty(points_ego.shape[0], dtype=[("x", "f4"), ("y", "f4"), ("z", "f4")])
+        vertex["x"] = points_ego[:, 0].astype(np.float32)
+        vertex["y"] = points_ego[:, 1].astype(np.float32)
+        vertex["z"] = points_ego[:, 2].astype(np.float32)
 
+        ply_out = PlyData([PlyElement.describe(vertex, "vertex")], text=False)  # text=True -> ASCII
+        ply_out.write(str(output_file))
     except Exception as e:
         print(f"处理文件 {input_file} 时出错: {e}")
 
