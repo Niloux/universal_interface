@@ -10,6 +10,7 @@ from core.lidar import PointCloudProcessor
 from core.track import TrackProcessor
 from utils.config import Config
 from utils.logger import default_logger
+from utils.timestamp import generate_timestamps
 
 
 def main() -> int:
@@ -21,12 +22,15 @@ def main() -> int:
         config = Config()
         default_logger.success("配置加载成功")
 
+        # 生成时间戳文件（0.1s步进）
+        generate_timestamps(config)
+
         # -- 按顺序显式执行数据处理流水线 --
         processors = [
-            # (EgoPoseProcessor, "Ego-Pose数据处理"),
-            # (CameraProcessor, "相机内外参及图像处理"),
-            # (TrackProcessor, "轨迹和动态物体处理"),
-            # (DynamicMaskProcessor, "动态物体掩码生成"),
+            (EgoPoseProcessor, "Ego-Pose数据处理"),
+            (CameraProcessor, "相机内外参及图像处理"),
+            (TrackProcessor, "轨迹和动态物体处理"),
+            (DynamicMaskProcessor, "动态物体掩码生成"),
             (PointCloudProcessor, "激光雷达数据处理"),
         ]
 

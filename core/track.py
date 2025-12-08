@@ -48,6 +48,8 @@ class TrackProcessor(BaseProcessor):
             "motorcycle": "cyclist",
             "sign": "sign",
             "traffic": "sign",
+            "car": "vehicle",
+            "ego": "vehicle",
         }
 
     def _map_category(self, name: str) -> Optional[str]:
@@ -81,10 +83,22 @@ class TrackProcessor(BaseProcessor):
         extrinsics = data_io.load_extrinsics(self.output_root_path, self.camera_ids)
         intrinsics = data_io.load_intrinsics(self.output_root_path, self.camera_ids)
 
-        frame_files = sorted(self.input_path.iterdir())
-        for frame_id, f in enumerate(tqdm(frame_files, desc="处理帧")):
+        # 按数值帧号排序文件，避免按字符串排序导致 1、10、100 位于错误顺序
+        try:
+            frame_files = sorted(self.input_path.iterdir(), key=lambda p: int(p.stem))
+        except Exception:
+            # 兼容非数字文件名的情况，回退到默认排序，不破坏用户空间
+            frame_files = sorted(self.input_path.iterdir())
+
+        for idx, f in enumerate(tqdm(frame_files, desc="处理帧")):
             with open(f, "r") as f_json:
                 data = json.load(f_json)
+
+            try:
+                frame_id = int(f.stem)
+            except ValueError:
+                # 非数字文件名时，使用遍历索引作为帧号（回退策略）
+                frame_id = idx
 
             frame_name = f"{frame_id:06d}"
             track_info[frame_name] = {}
@@ -241,16 +255,76 @@ class TrackProcessor(BaseProcessor):
             )
         return trajectory_info
 
+    def _box_to_dict(self, box: Box3D) -> Dict:
+        """将 Box3D 转换为可 JSON 序列化的字典"""
+        return {
+            "height": box.height,
+            "width": box.width,
+            "length": box.length,
+            "center_x": box.center_x,
+            "center_y": box.center_y,
+            "center_z": box.center_z,
+            "heading": box.heading,
+            "label": box.label,
+            "speed": box.speed,
+            "timestamp": box.timestamp,
+        }
+
+    def _frame_object_to_dict(self, obj: FrameObject) -> Dict:
+        """将 FrameObject 转换为可 JSON 序列化的字典"""
+        return {
+            "lidar_box": self._box_to_dict(obj.lidar_box),
+            "camera_box": self._box_to_dict(obj.camera_box),
+        }
+
+    def _track_info_to_json(self, track_info: Dict[str, Dict[str, FrameObject]]) -> Dict[str, Dict[str, Dict]]:
+        """将 track_info 结构整体转换为可 JSON 序列化的嵌套字典"""
+        out: Dict[str, Dict[str, Dict]] = {}
+        for frame_name, objs in track_info.items():
+            out_frame: Dict[str, Dict] = {}
+            for track_id, fo in objs.items():
+                out_frame[str(track_id)] = self._frame_object_to_dict(fo)
+            out[frame_name] = out_frame
+        return out
+
+    def _trajectory_to_json(self, trajectory_info: Dict[str, TrajectoryData]) -> Dict[str, Dict]:
+        """将 TrajectoryData 映射转换为可 JSON 序列化的字典"""
+        out: Dict[str, Dict] = {}
+        for track_id, t in trajectory_info.items():
+            out[str(track_id)] = {
+                "label": t.label,
+                "height": t.height,
+                "width": t.width,
+                "length": t.length,
+                "poses_vehicle": np.array(t.poses_vehicle).tolist(),
+                "timestamps": list(t.timestamps),
+                "frames": list(t.frames),
+                "speeds": list(t.speeds),
+                "symmetric": bool(t.symmetric),
+                "deformable": bool(t.deformable),
+                "stationary": bool(t.stationary),
+            }
+        return out
+
     def _save_results(self, processed_frames: Dict, trajectory_info: Dict):
-        """保存所有处理结果到文件"""
+        """保存所有处理结果到文件（同时提供 JSON 和 PKL，保持向后兼容）"""
         if processed_frames["vis_images"]:
             imageio.mimwrite(str(self.output_path / "track_vis.mp4"), processed_frames["vis_images"], fps=24)
 
+        # 先保存兼容的 PKL 文件，供内部模块消费
         with open(self.output_path / "track_info.pkl", "wb") as f:
-            pickle.dump(processed_frames["track_info"], f)
+            pickle.dump(processed_frames["track_info"], f, protocol=4)
+        with open(self.output_path / "track_camera_visible.pkl", "wb") as f:
+            pickle.dump(processed_frames["track_camera_visible"], f, protocol=4)
+        with open(self.output_path / "trajectory.pkl", "wb") as f:
+            pickle.dump(trajectory_info, f, protocol=4)
+
+        # 生成可读的 JSON 文件，转换数据结构以适配 json.dump
+        with open(self.output_path / "track_info.json", "w") as f:
+            json.dump(self._track_info_to_json(processed_frames["track_info"]), f)
         with open(self.output_path / "track_ids.json", "w") as f:
             json.dump(processed_frames["object_ids"], f, indent=4)
-        with open(self.output_path / "track_camera_visible.pkl", "wb") as f:
-            pickle.dump(processed_frames["track_camera_visible"], f)
-        with open(self.output_path / "trajectory.pkl", "wb") as f:
-            pickle.dump(trajectory_info, f)
+        with open(self.output_path / "track_camera_visible.json", "w") as f:
+            json.dump(processed_frames["track_camera_visible"], f)
+        with open(self.output_path / "trajectory.json", "w") as f:
+            json.dump(self._trajectory_to_json(trajectory_info), f)
