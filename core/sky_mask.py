@@ -38,7 +38,7 @@ class SkyMaskProcessor(BaseProcessor):
         处理天空掩码
         """
         try:
-            # TODO: 要用python3.12来装环境，后面再看
+            # TODO: 要用python3.12来装环境，后面再看https://github.com/facebookresearch/sam3
             default_logger.info("开始处理天空掩码")
             self.ensure_dir(self.mask_output_path)
         except Exception as e:
