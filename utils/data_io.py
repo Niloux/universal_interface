@@ -15,23 +15,32 @@ from plyfile import PlyData, PlyElement
 from utils.logger import default_logger
 
 
-def save_ply(path: Path, xyz: np.ndarray, rgb: np.ndarray, mask: np.ndarray):
+def save_ply(
+    path: Path,
+    xyz: np.ndarray,
+    rgb: np.ndarray,
+    mask: np.ndarray,
+    intensity: np.ndarray | None = None,
+    dropout: np.ndarray | None = None,
+):
     """将点云数据保存为PLY文件
 
     Args:
         path: PLY文件的保存路径
         xyz: 点云坐标 (N, 3)
         rgb: 点云颜色 (N, 3)
-        mask: 点云掩码 (N, 1)
+        mask: 点云掩码 (N, 1) 或 (N,)
+        intensity: 点云强度 (N,) 可选，范围建议为[0,1]
+        dropout: 点有效性布尔标志 (N,) 可选
     """
     # set rgb to 0 - 255
     if rgb.max() <= 1.0 and rgb.min() >= 0:
         rgb = np.clip(rgb * 255, 0.0, 255.0)
 
-    # set mask to bool data type
-    mask = mask.astype(np.bool_)
+    # normalize mask dtype and shape
+    mask = mask.astype(np.bool_).reshape(-1)
 
-    # Define the dtype for the structured array
+    # Define dtype
     dtype = [
         ("x", "f4"),
         ("y", "f4"),
@@ -41,12 +50,28 @@ def save_ply(path: Path, xyz: np.ndarray, rgb: np.ndarray, mask: np.ndarray):
         ("blue", "u1"),
         ("mask", "?"),
     ]
+    if intensity is not None:
+        dtype.append(("intensity", "f4"))
+    if dropout is not None:
+        dtype.append(("dropout", "?"))
 
-    elements = np.empty(xyz.shape[0], dtype=dtype)
-    attributes = np.concatenate((xyz, rgb, mask), axis=1)
-    elements[:] = list(map(tuple, attributes))
+    n = xyz.shape[0]
+    elements = np.empty(n, dtype=dtype)
 
-    # Create the PlyData object and write to file
+    # Assign values
+    elements["x"] = xyz[:, 0].astype(np.float32)
+    elements["y"] = xyz[:, 1].astype(np.float32)
+    elements["z"] = xyz[:, 2].astype(np.float32)
+    elements["red"] = rgb[:, 0].astype(np.uint8)
+    elements["green"] = rgb[:, 1].astype(np.uint8)
+    elements["blue"] = rgb[:, 2].astype(np.uint8)
+    elements["mask"] = mask
+
+    if intensity is not None:
+        elements["intensity"] = intensity.astype(np.float32)
+    if dropout is not None:
+        elements["dropout"] = dropout.astype(np.bool_)
+
     vertex_element = PlyElement.describe(elements, "vertex")
     ply_data = PlyData([vertex_element])
     ply_data.write(str(path))

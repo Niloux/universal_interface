@@ -57,7 +57,7 @@ class PointCloudProcessor(BaseProcessor):
                 dynamic = not traj.stationary
                 if dynamic and traj.label != "sign":
                     self.ensure_dir(self.actor_output_path / track_id)
-                    pointcloud_actor[track_id] = {"xyz": [], "rgb": [], "mask": []}
+                    pointcloud_actor[track_id] = {"xyz": [], "rgb": [], "mask": [], "intensity": [], "dropout": []}
             default_logger.info(f"加载了{len(pointcloud_actor)}个actor")
 
             # 2. 处理lidar数据
@@ -77,6 +77,8 @@ class PointCloudProcessor(BaseProcessor):
             for frame_name in tqdm(frame_files):
                 # 收集当前帧的所有点云数据
                 all_xyzs = []
+                all_intensities = []
+                all_dropouts = []
                 for lidar_name in lidar_names:
                     lidar_points_path = point_clouds_path / lidar_name
                     points_file_path = lidar_points_path / f"{frame_name}.ply"
@@ -89,11 +91,36 @@ class PointCloudProcessor(BaseProcessor):
                     points_3d = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1)
                     all_xyzs.append(points_3d)
 
+                    # 读取/归一化 intensity，缺省填充为1.0
+                    if "intensity" in vertices.dtype.names:
+                        intens = np.asarray(vertices["intensity"], dtype=np.float32)
+                        if intens.max() > 1.0:
+                            intens = np.clip(intens, 0.0, 255.0) / 255.0
+                        else:
+                            intens = np.clip(intens, 0.0, 1.0)
+                    else:
+                        intens = np.ones(points_3d.shape[0], dtype=np.float32)
+                    all_intensities.append(intens)
+
+                    # 读取/计算 dropout，缺省按深度>=0计算
+                    if "dropout" in vertices.dtype.names:
+                        d = np.asarray(vertices["dropout"], dtype=np.bool_)
+                    else:
+                        first_cam_id = self.camera_ids[0]
+                        vehicle_to_cam = np.linalg.inv(extrinsics[first_cam_id])
+                        xyzs_homo_local = np.concatenate([points_3d, np.ones_like(points_3d[..., :1])], axis=-1)
+                        xyzs_cam_local = xyzs_homo_local @ vehicle_to_cam.T
+                        depth_local = xyzs_cam_local[..., 2]
+                        d = depth_local >= 0
+                    all_dropouts.append(d)
+
                 if not all_xyzs:
                     continue
 
                 # 合并所有lidar的数据
                 xyzs = np.concatenate(all_xyzs, axis=0)
+                intensities = np.concatenate(all_intensities, axis=0)
+                dropouts = np.concatenate(all_dropouts, axis=0)
                 xyzs_for_depth = xyzs  # 用于深度图生成的点云数据
                 # 初始化RGB为零（黑色，用于actor/background分离）
                 rgbs = np.zeros((xyzs.shape[0], 3), dtype=np.uint8)
@@ -157,6 +184,8 @@ class PointCloudProcessor(BaseProcessor):
                     self.actor_output_path,
                     self.background_output_path,
                     frame_name,
+                    intensities,
+                    dropouts,
                 )
 
         except Exception as e:
@@ -372,6 +401,8 @@ class PointCloudProcessor(BaseProcessor):
         lidar_dir_actor: pathlib.Path,
         lidar_dir_background: pathlib.Path,
         frame_name: str,
+        intensities: np.ndarray,
+        dropouts: np.ndarray,
     ):
         """分离Actor和Background点云
 
@@ -436,10 +467,14 @@ class PointCloudProcessor(BaseProcessor):
                 xyzs_inbbox = xyzs_actor[inbbox_mask]
                 rgbs_inbbox = rgbs[inbbox_mask]
                 masks_inbbox = masks[inbbox_mask]
+                intensities_inbbox = intensities[inbbox_mask]
+                dropouts_inbbox = dropouts[inbbox_mask]
 
                 pointcloud_actor[track_id]["xyz"].append(xyzs_inbbox)
                 pointcloud_actor[track_id]["rgb"].append(rgbs_inbbox)
                 pointcloud_actor[track_id]["mask"].append(masks_inbbox)
+                pointcloud_actor[track_id]["intensity"].append(intensities_inbbox)
+                pointcloud_actor[track_id]["dropout"].append(dropouts_inbbox)
 
                 # 保存单帧actor点云
                 masks_inbbox_expanded = masks_inbbox[..., None]
@@ -450,6 +485,8 @@ class PointCloudProcessor(BaseProcessor):
                         xyzs_inbbox,
                         rgbs_inbbox,
                         masks_inbbox_expanded,
+                        intensity=intensities_inbbox,
+                        dropout=dropouts_inbbox,
                     )
                 except Exception as e:
                     default_logger.error(f"保存actor点云失败 {track_id}/{frame_name}: {e}")
@@ -458,6 +495,8 @@ class PointCloudProcessor(BaseProcessor):
         xyzs_background = xyzs[~actor_mask]
         rgbs_background = rgbs[~actor_mask]
         masks_background = masks[~actor_mask]
+        intensities_background = intensities[~actor_mask]
+        dropouts_background = dropouts[~actor_mask]
         masks_background_expanded = masks_background[..., None]
 
         ply_background_path = lidar_dir_background / f"{frame_name}.ply"
@@ -467,6 +506,8 @@ class PointCloudProcessor(BaseProcessor):
                 xyzs_background,
                 rgbs_background,
                 masks_background_expanded,
+                intensity=intensities_background,
+                dropout=dropouts_background,
             )
         except Exception as e:
             default_logger.error(f"保存background点云失败 {frame_name}: {e}")
