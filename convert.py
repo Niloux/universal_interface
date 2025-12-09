@@ -135,7 +135,8 @@ def labels_processor(file, output_dir):
 
 
 def pointcloud_processor(input_file, output_dir):
-    """处理点云为 ASCII PLY：从输入 PLY 读取并仅保留 x/y/z，按帧与雷达ID组织输出。"""
+    """处理点云为 PLY：从输入 PLY 读取并保留 x/y/z，以及可选的
+    intensity 和 dropout 属性；按帧与雷达ID组织输出。"""
     try:
         filename = Path(input_file).stem
         frame_id, lidar_id = filename.split("_")
@@ -163,15 +164,33 @@ def pointcloud_processor(input_file, output_dir):
         # NOTE:这里假设点云已经转换为ego坐标系
         points_ego = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1)
 
+        has_intensity = "intensity" in vertices.dtype.names
+        has_dropout = "dropout" in vertices.dtype.names
+        intensity = (
+            np.asarray(vertices["intensity"], dtype=np.float32)
+            if has_intensity
+            else np.ones(points_ego.shape[0], dtype=np.float32)
+        )
+        if intensity.max() > 1.0:
+            intensity = np.clip(intensity, 0.0, 255.0) / 255.0
+        else:
+            intensity = np.clip(intensity, 0.0, 1.0)
+        dropout = np.asarray(vertices["dropout"], dtype=np.bool_) if has_dropout else None
+
         sensor_dir = Path(output_dir) / lidar_to_dir[lidar_id]
         sensor_dir.mkdir(parents=True, exist_ok=True)
         output_file = sensor_dir / f"{frame_id}.ply"
 
-        # 创建结构化数组，明确属性类型为 float32（PLY 的 'float'）
-        vertex = np.empty(points_ego.shape[0], dtype=[("x", "f4"), ("y", "f4"), ("z", "f4")])
+        dtype = [("x", "f4"), ("y", "f4"), ("z", "f4"), ("intensity", "f4")]
+        if has_dropout:
+            dtype.append(("dropout", "?"))
+        vertex = np.empty(points_ego.shape[0], dtype=dtype)
         vertex["x"] = points_ego[:, 0].astype(np.float32)
         vertex["y"] = points_ego[:, 1].astype(np.float32)
         vertex["z"] = points_ego[:, 2].astype(np.float32)
+        vertex["intensity"] = intensity
+        if has_dropout:
+            vertex["dropout"] = dropout
 
         ply_out = PlyData([PlyElement.describe(vertex, "vertex")], text=False)  # text=True -> ASCII
         ply_out.write(str(output_file))
