@@ -46,18 +46,32 @@ class TrackProcessor(BaseProcessor):
             "pedestrian": "pedestrian",
             "bicycle": "cyclist",
             "motorcycle": "cyclist",
+            "motor": "cyclist",
+            "cyclist": "cyclist",
             "sign": "sign",
             "traffic": "sign",
+            "pole": "pole",
             "car": "vehicle",
             "ego": "vehicle",
+            "bus": "vehicle",
         }
 
-    def _map_category(self, name: str) -> Optional[str]:
-        name = name.lower()
+    def _map_category(self, name: Optional[str]) -> str:
+        """将原始类别名称映射为标准类别，未命中时返回"other"。
+
+        Args:
+            name: 原始类别名称，可能为None或任意字符串。
+
+        Returns:
+            映射后的标准类别字符串。如果未匹配到任何已知类别，统一返回"other"。
+        """
+        if not name:
+            return "other"
+        name_l = str(name).lower()
         for key, value in self.category_mapping.items():
-            if key in name:
+            if key in name_l:
                 return value
-        return None
+        return "other"
 
     def process(self) -> None:
         """处理轨迹数据的主流程"""
@@ -119,7 +133,12 @@ class TrackProcessor(BaseProcessor):
                 trajectory[track_id][frame_name] = box_info
 
                 self._update_camera_visibility(
-                    track_camera_visible[frame_name], images, extrinsics, intrinsics, box_info, track_id
+                    track_camera_visible[frame_name],
+                    images,
+                    extrinsics,
+                    intrinsics,
+                    box_info,
+                    track_id,
                 )
 
             if all(cam_id in images for cam_id in ["0", "1", "2"]):
@@ -225,11 +244,13 @@ class TrackProcessor(BaseProcessor):
                 speeds.append(box.speed)
 
                 pose_vehicle = np.eye(4)
-                pose_vehicle[:3, :3] = np.array([
-                    [math.cos(box.heading), -math.sin(box.heading), 0],
-                    [math.sin(box.heading), math.cos(box.heading), 0],
-                    [0, 0, 1],
-                ])
+                pose_vehicle[:3, :3] = np.array(
+                    [
+                        [math.cos(box.heading), -math.sin(box.heading), 0],
+                        [math.sin(box.heading), math.cos(box.heading), 0],
+                        [0, 0, 1],
+                    ]
+                )
                 pose_vehicle[:3, 3] = np.array([box.center_x, box.center_y, box.center_z])
                 ego_pose = data_io.load_ego_pose(self.output_root_path, int(frame_name))
                 poses_vehicle.append(pose_vehicle.astype(np.float32))
@@ -238,7 +259,22 @@ class TrackProcessor(BaseProcessor):
             dim = np.max(np.array(dims), axis=0)
             positions = np.array(poses_world)[:, :3, 3]
             distance = np.linalg.norm(positions[0] - positions[-1])
-            dynamic = np.any(np.std(positions, axis=0) > 0.5) or distance > 2
+
+            allowed_dynamic_types = {
+                "car",
+                "truck",
+                "bus",
+                "motorcycle",
+                "bicycle",
+                "pedestrian",
+                "cyclist",
+                "vehicle",
+            }
+            object_type = first_box.label
+            if object_type not in allowed_dynamic_types:
+                dynamic = False
+            else:
+                dynamic = np.any(np.std(positions, axis=0) > 2) or distance > 10
 
             trajectory_info[track_id] = TrajectoryData(
                 label=first_box.label,
@@ -309,7 +345,11 @@ class TrackProcessor(BaseProcessor):
     def _save_results(self, processed_frames: Dict, trajectory_info: Dict):
         """保存所有处理结果到文件（同时提供 JSON 和 PKL，保持向后兼容）"""
         if processed_frames["vis_images"]:
-            imageio.mimwrite(str(self.output_path / "track_vis.mp4"), processed_frames["vis_images"], fps=24)
+            imageio.mimwrite(
+                str(self.output_path / "track_vis.mp4"),
+                processed_frames["vis_images"],
+                fps=24,
+            )
 
         # 先保存兼容的 PKL 文件，供内部模块消费
         with open(self.output_path / "track_info.pkl", "wb") as f:

@@ -152,7 +152,7 @@ class PointCloudProcessor(BaseProcessor):
                     )
 
                     # 可视化深度图（仅对第一个相机）
-                    if i == "1":
+                    if i in ["0"]:
                         self._generate_depth_visualization(
                             depth,
                             self.depth_output_path,

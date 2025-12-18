@@ -161,8 +161,27 @@ def pointcloud_processor(input_file, output_dir):
             print(f"vertex缺少x/y/z属性: {input_file}")
             return
 
-        # NOTE:这里假设点云已经转换为ego坐标系
-        points_ego = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1)
+        base_input = Path(input_file).parent.parent
+        extrinsics_path = base_input / "extrinsics_lidar" / f"{lidar_id}.txt"
+        if extrinsics_path.exists():
+            print("Lidar_T_Vehicle转换")
+            E = np.loadtxt(str(extrinsics_path))
+            if E.ndim == 1:
+                if E.size == 12:
+                    E = np.append(E, [0.0, 0.0, 0.0, 1.0])
+                E = E.reshape(4, 4)
+            elif E.shape == (3, 4):
+                E = np.vstack([E, np.array([0.0, 0.0, 0.0, 1.0])])
+            elif E.shape != (4, 4):
+                raise ValueError(f"外参矩阵形状不合法: {E.shape}")
+
+            points_lidar = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1).astype(np.float32)
+            ones = np.ones((points_lidar.shape[0], 1), dtype=np.float32)
+            points_homo = np.hstack([points_lidar, ones])
+            points_ego_homo = (E @ points_homo.T).T
+            points_ego = points_ego_homo[:, :3].astype(np.float32)
+        else:
+            points_ego = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1).astype(np.float32)
 
         has_intensity = "intensity" in vertices.dtype.names
         has_dropout = "dropout" in vertices.dtype.names
