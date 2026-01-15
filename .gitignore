@@ -16,3 +16,4 @@ required_data/
 *.zip
 
 backup/
+model/

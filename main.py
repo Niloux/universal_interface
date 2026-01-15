@@ -7,6 +7,7 @@ from core.camera import CameraProcessor
 from core.dynamic_mask import DynamicMaskProcessor
 from core.ego_pose import EgoPoseProcessor
 from core.lidar import PointCloudProcessor
+from core.sky_mask import SkyMaskProcessor
 from core.track import TrackProcessor
 from utils.config import Config
 from utils.logger import default_logger
@@ -32,6 +33,7 @@ def main() -> int:
             (TrackProcessor, "轨迹和动态物体处理"),
             (DynamicMaskProcessor, "动态物体掩码生成"),
             (PointCloudProcessor, "激光雷达数据处理"),
+            (SkyMaskProcessor, "天空掩码生成"),
         ]
 
         for processor_class, name in processors:

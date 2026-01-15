@@ -12,3 +12,4 @@ camera:
 input: "required_data"
 output: "output"
 
+sam3_checkpoint: "model/sam3.pt"
