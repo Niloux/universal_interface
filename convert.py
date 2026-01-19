@@ -54,21 +54,56 @@ def pose_processor(file, output_dir):
 
 
 def image_processor(file, output_dir):
-    """处理图像文件：XXXXXX_Y.png -> camera_name/XXXXXX.jpg"""
-    cameras = {"0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6"}
+    """处理图像文件：{frame}_{cam}.(jpg|png) -> images/{cam}/{frame}.(jpg|png)。
 
+    说明：
+    - 该处理器用于“平铺式 images 目录”输入：所有图像都在同一层级，通过文件名携带相机信息；
+    - 若图像已按相机分目录组织（images/<cam>/<frame>.jpg），请使用 `convert_images(...)`。
+    """
     parts = file.stem.split("_")
     if len(parts) != 2:
-        raise ValueError("文件名格式错误，期望XXXXXX_Y.png")
+        raise ValueError("文件名格式错误，期望{frame}_{cam}.(jpg|png)")
 
     frame_id, camera_id = parts
-    if camera_id not in cameras:
-        raise ValueError(f"未知相机ID: {camera_id}")
-
-    camera_dir = output_dir / cameras[camera_id]
+    camera_dir = output_dir / str(camera_id)
     camera_dir.mkdir(exist_ok=True)
 
-    shutil.copy2(file, camera_dir / f"{frame_id}.jpg")
+    shutil.copy2(file, camera_dir / f"{frame_id}{file.suffix.lower()}")
+
+
+def convert_images(images_input_dir: Path, images_output_dir: Path) -> None:
+    """转换图像目录到标准化结构：images/<cam>/<frame>.(jpg|png)。
+
+    支持两种输入：
+    1) 分目录式：images/<cam>/<frame>.(jpg|png)
+    2) 平铺式：images/{frame}_{cam}.(jpg|png)
+
+    Args:
+        images_input_dir: 原始 images 目录路径。
+        images_output_dir: 输出 images 目录路径。
+    """
+    images_output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not images_input_dir.exists():
+        print(f"目录不存在: {images_input_dir}")
+        return
+
+    subdirs = [p for p in images_input_dir.iterdir() if p.is_dir()]
+    if subdirs:
+        for cam_dir in sorted(subdirs, key=lambda p: p.name):
+            out_cam_dir = images_output_dir / cam_dir.name
+            out_cam_dir.mkdir(parents=True, exist_ok=True)
+            for img in sorted(cam_dir.iterdir(), key=lambda p: p.name):
+                if img.is_file() and img.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+                    shutil.copy2(img, out_cam_dir / f"{img.stem}{img.suffix.lower()}")
+        return
+
+    for img in sorted(images_input_dir.iterdir(), key=lambda p: p.name):
+        if img.is_file() and img.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+            try:
+                image_processor(img, images_output_dir)
+            except Exception as e:
+                print(f"处理 {img.name} 失败: {e}")
 
 
 def copy_processor(file, output_dir):
@@ -102,7 +137,9 @@ def labels_processor(file, output_dir):
                 continue
 
             # 兼容两种分隔符：优先尝试逗号分隔，否则按任意空白分隔
-            parts = [p.strip() for p in line.split(",")] if "," in line else line.split()
+            parts = (
+                [p.strip() for p in line.split(",")] if "," in line else line.split()
+            )
 
             # 至少需要10个字段（frame_id, track_id, obj_type, x, y, z, l, w, h, heading）
             if len(parts) < 10:
@@ -175,13 +212,17 @@ def pointcloud_processor(input_file, output_dir):
             elif E.shape != (4, 4):
                 raise ValueError(f"外参矩阵形状不合法: {E.shape}")
 
-            points_lidar = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1).astype(np.float32)
+            points_lidar = np.stack(
+                [vertices["x"], vertices["y"], vertices["z"]], axis=1
+            ).astype(np.float32)
             ones = np.ones((points_lidar.shape[0], 1), dtype=np.float32)
             points_homo = np.hstack([points_lidar, ones])
             points_ego_homo = (E @ points_homo.T).T
             points_ego = points_ego_homo[:, :3].astype(np.float32)
         else:
-            points_ego = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1).astype(np.float32)
+            points_ego = np.stack(
+                [vertices["x"], vertices["y"], vertices["z"]], axis=1
+            ).astype(np.float32)
 
         has_intensity = "intensity" in vertices.dtype.names
         has_dropout = "dropout" in vertices.dtype.names
@@ -194,7 +235,9 @@ def pointcloud_processor(input_file, output_dir):
             intensity = np.clip(intensity, 0.0, 255.0) / 255.0
         else:
             intensity = np.clip(intensity, 0.0, 1.0)
-        dropout = np.asarray(vertices["dropout"], dtype=np.bool_) if has_dropout else None
+        dropout = (
+            np.asarray(vertices["dropout"], dtype=np.bool_) if has_dropout else None
+        )
 
         sensor_dir = Path(output_dir) / lidar_to_dir[lidar_id]
         sensor_dir.mkdir(parents=True, exist_ok=True)
@@ -211,19 +254,65 @@ def pointcloud_processor(input_file, output_dir):
         if has_dropout:
             vertex["dropout"] = dropout
 
-        ply_out = PlyData([PlyElement.describe(vertex, "vertex")], text=False)  # text=True -> ASCII
+        ply_out = PlyData(
+            [PlyElement.describe(vertex, "vertex")], text=False
+        )  # text=True -> ASCII
         ply_out.write(str(output_file))
     except Exception as e:
         print(f"处理文件 {input_file} 时出错: {e}")
 
 
-if __name__ == "__main__":
-    base_input = Path("input")
-    base_output = Path("required_data")
+def convert_dataset(input_root: Path, required_data_root: Path) -> bool:
+    """将原始数据集目录转换为流水线所需的标准化结构（required_data）。
 
-    process_files(base_input / "poses", base_output / "ego_pose", "*.txt", pose_processor)
-    process_files(base_input / "images", base_output / "images", "*.jpg", image_processor)
-    process_files(base_input / "extrinsics_camera", base_output / "extrinsics", "*.txt", copy_processor)
-    process_files(base_input / "intrinsics_camera", base_output / "intrinsics", "*.txt", copy_processor)
-    process_files(base_input / "labels", base_output / "objects", "*.txt", labels_processor)
-    process_files(base_input / "pointclouds", base_output / "pointclouds", "*.ply", pointcloud_processor)
+    Args:
+        input_root: 原始输入数据根目录（包含 poses/images/extrinsics_camera/...）。
+        required_data_root: 标准化数据输出根目录（即 required_data）。
+
+    Returns:
+        bool: 转换是否成功（遇到关键目录缺失/异常会返回False）。
+    """
+    try:
+        input_root = Path(input_root)
+        required_data_root = Path(required_data_root)
+
+        process_files(
+            input_root / "poses",
+            required_data_root / "ego_pose",
+            "*.txt",
+            pose_processor,
+        )
+        convert_images(input_root / "images", required_data_root / "images")
+        process_files(
+            input_root / "extrinsics_camera",
+            required_data_root / "extrinsics",
+            "*.txt",
+            copy_processor,
+        )
+        process_files(
+            input_root / "intrinsics_camera",
+            required_data_root / "intrinsics",
+            "*.txt",
+            copy_processor,
+        )
+        process_files(
+            input_root / "labels",
+            required_data_root / "objects",
+            "*.txt",
+            labels_processor,
+        )
+        process_files(
+            input_root / "pointclouds",
+            required_data_root / "pointclouds",
+            "*.ply",
+            pointcloud_processor,
+        )
+        return True
+    except Exception as e:
+        print(f"转换数据集失败: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    ok = convert_dataset(Path("input"), Path("required_data"))
+    exit(0 if ok else 1)

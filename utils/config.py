@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from utils.camera_discovery import discover_cameras
+
 
 class CameraConfig:
     """封装相机相关的配置"""
@@ -64,6 +66,18 @@ class Config:
             else:
                 setattr(self, key, value)
 
+        if hasattr(self, "camera"):
+            self.camera_ids = _sorted_unique_camera_ids(list(self.camera.id_map.values()))
+            self.image_dir_by_id = {cid: cid for cid in self.camera_ids}
+            return
+
+        discovery = discover_cameras(getattr(self, "input"))
+        self.camera_ids = list(discovery.camera_ids)
+        self.image_dir_by_id = dict(discovery.image_dir_by_id)
+        id_map = {pos: int(cid) if cid.isdigit() else i for i, (cid, pos) in enumerate(discovery.image_dir_by_id.items())}
+        camera_dict = {"positions": list(id_map.keys()), "id_map": id_map}
+        self.camera = CameraConfig(camera_dict)
+
     def _load_and_validate(self, path: Path) -> Dict[str, Any]:
         """加载并验证配置文件"""
         if not path.exists():
@@ -79,7 +93,7 @@ class Config:
             raise TypeError("配置文件根节点必须是字典类型")
 
         # 验证必要的键是否存在
-        required_keys = ["input", "output", "camera"]
+        required_keys = ["input", "output"]
         for key in required_keys:
             if key not in config:
                 raise ValueError(f"配置文件中缺少必要的键: '{key}'")
@@ -101,3 +115,12 @@ class Config:
 
     def __repr__(self) -> str:
         return f"Config(keys={list(self._config.keys())})"
+
+
+def _sorted_unique_camera_ids(ids: List[Any]) -> List[str]:
+    """将相机ID规范化为字符串并排序去重（数字优先按数值排序）。"""
+    values = [str(x) for x in ids]
+    uniq = sorted(set(values))
+    numeric = [s for s in uniq if s.isdigit()]
+    others = [s for s in uniq if not s.isdigit()]
+    return sorted(numeric, key=lambda s: int(s)) + sorted(others)

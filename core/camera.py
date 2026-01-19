@@ -36,8 +36,12 @@ class CameraProcessor(BaseProcessor):
             config: 配置管理对象
         """
         super().__init__(config)
-        self.camera_positions = self.config.camera.positions
-        self.camera_id_map = self.config.camera.id_map
+        if hasattr(self.config, "camera_ids"):
+            self.camera_ids = [str(v) for v in getattr(self.config, "camera_ids")]
+        else:
+            self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
+
+        self.image_dir_by_id = getattr(self.config, "image_dir_by_id", {cid: cid for cid in self.camera_ids})
 
         self.input_path = self.config.input
         self.output_path = self.config.output
@@ -47,7 +51,7 @@ class CameraProcessor(BaseProcessor):
         self.extrinsics_path = self.input_path / "extrinsics"
         self.intrinsics_path = self.input_path / "intrinsics"
 
-        default_logger.info(f"初始化相机处理器，支持 {len(self.camera_positions)} 个相机位置")
+        default_logger.info(f"初始化相机处理器，支持 {len(self.camera_ids)} 个相机")
 
     def process(self) -> bool:
         """
@@ -57,7 +61,7 @@ class CameraProcessor(BaseProcessor):
             bool: 处理是否成功
         """
         try:
-            default_logger.info(f"开始处理 {len(self.camera_positions)} 个相机的数据")
+            default_logger.info(f"开始处理 {len(self.camera_ids)} 个相机的数据")
 
             # 创建输出目录
             images_output_dir = self.output_path / "images"
@@ -89,9 +93,7 @@ class CameraProcessor(BaseProcessor):
             intrinsics_output_dir: 内参输出目录
             extrinsics_output_dir: 外参输出目录
         """
-        for camera_position in self.camera_positions:
-            camera_id = self.camera_id_map[camera_position]
-
+        for camera_id in self.camera_ids:
             with open(self.extrinsics_path / f"{camera_id}.txt", "r") as f:
                 extrinsics = f.read()
             with open(self.intrinsics_path / f"{camera_id}.txt", "r") as f:
@@ -107,18 +109,18 @@ class CameraProcessor(BaseProcessor):
 
         default_logger.info("相机参数文件生成完成")
 
-    def _get_image_files(self, camera_position: str) -> List[Path]:
+    def _get_image_files(self, camera_id: str) -> List[Path]:
         """
         获取图像文件列表
 
         Args:
-            camera_position: 相机位置
+            camera_id: 相机ID
 
         Returns:
             图像文件路径列表
         """
-        # 相机位置在配置中可能为整数，这里统一转为字符串以拼接路径
-        images_dir = self.images_path / str(camera_position)
+        images_dir_name = self.image_dir_by_id.get(str(camera_id), str(camera_id))
+        images_dir = self.images_path / str(images_dir_name)
         if not images_dir.exists():
             return []
 
@@ -136,33 +138,39 @@ class CameraProcessor(BaseProcessor):
         Args:
             images_output_dir: 图像输出目录
         """
-        # 获取所有帧的数量（以第一个相机为准）
-        first_camera = self.camera_positions[0]
-        image_files = self._get_image_files(first_camera)
-        total_frames = len(image_files)
+        # 获取所有帧列表（以第一个相机为准）
+        first_camera_id = self.camera_ids[0]
+        image_files = self._get_image_files(first_camera_id)
+
+        frame_stems = [p.stem for p in image_files if p.stem.isdigit()]
+        if frame_stems:
+            frame_names = [f"{int(s):06d}" for s in sorted(frame_stems, key=lambda x: int(x))]
+        else:
+            frame_names = [p.stem for p in image_files]
+        total_frames = len(frame_names)
 
         default_logger.info(f"开始处理图像文件，共 {total_frames} 帧")
 
-        for frame_idx in tqdm(range(total_frames), desc="处理图像"):
-            frame_name = f"{frame_idx:06d}"
+        for frame_name in tqdm(frame_names, desc="处理图像"):
+            for camera_id in self.camera_ids:
+                images_dir_name = self.image_dir_by_id.get(str(camera_id), str(camera_id))
+                input_dir = self.images_path / str(images_dir_name)
 
-            for camera_position in self.camera_positions:
-                camera_id = self.camera_id_map[camera_position]
+                source_file = None
+                for suffix in (".jpg", ".jpeg", ".png"):
+                    cand = input_dir / f"{frame_name}{suffix}"
+                    if cand.exists():
+                        source_file = cand
+                        break
 
-                # 源图像文件
-                # 相机位置在配置中可能为整数，这里统一转为字符串以拼接路径
-                input_dir = self.images_path / str(camera_position)
-                source_file = input_dir / f"{frame_name}.jpg"
+                if source_file is None:
+                    continue
 
-                if source_file.exists():
-                    # 目标文件名：帧号_相机ID.png
-                    output_file = images_output_dir / f"{frame_name}_{camera_id}.png"
-
-                    try:
-                        # 复制并转换格式（如果需要）
-                        shutil.copy2(source_file, output_file)
-                    except Exception as e:
-                        default_logger.error(f"处理图像文件 {source_file} 时出错: {e}")
+                output_file = images_output_dir / f"{frame_name}_{camera_id}.png"
+                try:
+                    shutil.copy2(source_file, output_file)
+                except Exception as e:
+                    default_logger.error(f"处理图像文件 {source_file} 时出错: {e}")
 
     def _write_intrinsics_file(self, intrinsics: str, output_file: Path):
         """

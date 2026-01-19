@@ -40,7 +40,10 @@ class DynamicMaskProcessor(BaseProcessor):
         self.image_output_path = self.output_path / "images"
         self.ensure_dir(self.mask_output_path)
 
-        self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
+        if hasattr(self.config, "camera_ids"):
+            self.camera_ids = [str(v) for v in getattr(self.config, "camera_ids")]
+        else:
+            self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
 
         # 默认图像尺寸，作为无法加载图像时的备用
         self.default_image_shape = (1080, 1920)  # (height, width)

@@ -39,7 +39,10 @@ class PointCloudProcessor(BaseProcessor):
         self.ensure_dir(self.background_output_path)
         self.ensure_dir(self.depth_output_path)
 
-        self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
+        if hasattr(self.config, "camera_ids"):
+            self.camera_ids = [str(v) for v in getattr(self.config, "camera_ids")]
+        else:
+            self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
 
     def process(self) -> bool:
         try:

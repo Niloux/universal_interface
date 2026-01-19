@@ -130,10 +130,17 @@ class EgoPoseProcessor(BaseProcessor):
             frame_stem: 帧文件名的前缀（不含扩展名）
             content: 要写入副本的文本内容
         """
-        try:
-            ids = sorted({int(v) for v in self.config.camera.id_map.values()})
-        except Exception:
-            ids = list(range(7))
+        ids: List[int]
+        if hasattr(self.config, "camera_ids"):
+            try:
+                ids = sorted({int(v) for v in getattr(self.config, "camera_ids")})
+            except Exception:
+                ids = list(range(len(getattr(self.config, "camera_ids"))))
+        else:
+            try:
+                ids = sorted({int(v) for v in self.config.camera.id_map.values()})
+            except Exception:
+                ids = list(range(7))
 
         for cam_id in ids:
             dup_path = self.output_path / f"{frame_stem}_{cam_id}.txt"
@@ -153,10 +160,17 @@ class EgoPoseProcessor(BaseProcessor):
             default_logger.warning(f"输出目录不存在: {self.output_path}")
             return
 
-        try:
-            ids = sorted({int(v) for v in self.config.camera.id_map.values()})
-        except Exception:
-            ids = list(range(7))
+        ids: List[int]
+        if hasattr(self.config, "camera_ids"):
+            try:
+                ids = sorted({int(v) for v in getattr(self.config, "camera_ids")})
+            except Exception:
+                ids = list(range(len(getattr(self.config, "camera_ids"))))
+        else:
+            try:
+                ids = sorted({int(v) for v in self.config.camera.id_map.values()})
+            except Exception:
+                ids = list(range(7))
 
         files = [p for p in self.output_path.iterdir() if p.is_file() and p.suffix == ".txt" and "_" not in p.stem]
         if not files:

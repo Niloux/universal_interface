@@ -38,7 +38,10 @@ class TrackProcessor(BaseProcessor):
         self.output_path = self.output_root_path / "track"
         self.image_output_path = self.output_root_path / "images"
 
-        self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
+        if hasattr(self.config, "camera_ids"):
+            self.camera_ids = [str(v) for v in getattr(self.config, "camera_ids")]
+        else:
+            self.camera_ids = [str(v) for v in self.config.camera.id_map.values()]
         self.ensure_dir(self.output_path)
 
         self.category_mapping = {

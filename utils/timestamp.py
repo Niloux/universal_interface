@@ -40,11 +40,15 @@ def generate_timestamps(config: Config) -> None:
 
         out_data = {"FRAME": timestamps}
 
-        try:
-            cam_ids = config.camera.id_map.values()
-        except Exception:
-            default_logger.error("无法从配置中读取相机ID,抛出错误")
-            raise
+        cam_ids = None
+        if hasattr(config, "camera_ids"):
+            cam_ids = [str(x) for x in getattr(config, "camera_ids")]
+        else:
+            try:
+                cam_ids = [str(v) for v in config.camera.id_map.values()]
+            except Exception:
+                default_logger.error("无法从配置中读取相机ID,抛出错误")
+                raise
 
         for cam_id in cam_ids:
             out_data[str(cam_id)] = dict(timestamps)
