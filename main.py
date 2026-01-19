@@ -39,7 +39,10 @@ def main() -> int:
         for processor_class, name in processors:
             default_logger.info(f"--- 开始运行: {name} ---")
             processor = processor_class(config)
-            processor.process()
+            result = processor.process()
+            if result is False:
+                default_logger.error(f"--- {name} 运行失败 ---")
+                return 1
             default_logger.success(f"--- {name} 运行成功 ---")
 
         default_logger.success("所有数据处理任务完成！")
