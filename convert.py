@@ -137,9 +137,7 @@ def labels_processor(file, output_dir):
                 continue
 
             # 兼容两种分隔符：优先尝试逗号分隔，否则按任意空白分隔
-            parts = (
-                [p.strip() for p in line.split(",")] if "," in line else line.split()
-            )
+            parts = [p.strip() for p in line.split(",")] if "," in line else line.split()
 
             # 至少需要10个字段（frame_id, track_id, obj_type, x, y, z, l, w, h, heading）
             if len(parts) < 10:
@@ -212,17 +210,13 @@ def pointcloud_processor(input_file, output_dir):
             elif E.shape != (4, 4):
                 raise ValueError(f"外参矩阵形状不合法: {E.shape}")
 
-            points_lidar = np.stack(
-                [vertices["x"], vertices["y"], vertices["z"]], axis=1
-            ).astype(np.float32)
+            points_lidar = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1).astype(np.float32)
             ones = np.ones((points_lidar.shape[0], 1), dtype=np.float32)
             points_homo = np.hstack([points_lidar, ones])
             points_ego_homo = (E @ points_homo.T).T
             points_ego = points_ego_homo[:, :3].astype(np.float32)
         else:
-            points_ego = np.stack(
-                [vertices["x"], vertices["y"], vertices["z"]], axis=1
-            ).astype(np.float32)
+            points_ego = np.stack([vertices["x"], vertices["y"], vertices["z"]], axis=1).astype(np.float32)
 
         has_intensity = "intensity" in vertices.dtype.names
         has_dropout = "dropout" in vertices.dtype.names
@@ -235,9 +229,7 @@ def pointcloud_processor(input_file, output_dir):
             intensity = np.clip(intensity, 0.0, 255.0) / 255.0
         else:
             intensity = np.clip(intensity, 0.0, 1.0)
-        dropout = (
-            np.asarray(vertices["dropout"], dtype=np.bool_) if has_dropout else None
-        )
+        dropout = np.asarray(vertices["dropout"], dtype=np.bool_) if has_dropout else None
 
         sensor_dir = Path(output_dir) / lidar_to_dir[lidar_id]
         sensor_dir.mkdir(parents=True, exist_ok=True)
@@ -254,9 +246,7 @@ def pointcloud_processor(input_file, output_dir):
         if has_dropout:
             vertex["dropout"] = dropout
 
-        ply_out = PlyData(
-            [PlyElement.describe(vertex, "vertex")], text=False
-        )  # text=True -> ASCII
+        ply_out = PlyData([PlyElement.describe(vertex, "vertex")], text=False)  # text=True -> ASCII
         ply_out.write(str(output_file))
     except Exception as e:
         print(f"处理文件 {input_file} 时出错: {e}")
