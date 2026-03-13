@@ -177,12 +177,21 @@ class CameraProcessor(BaseProcessor):
         写入内参文件
 
         Args:
-            intrinsics: 相机内参数据（一行空格分隔）
+            intrinsics: 相机内参数据（一行空格分隔），支持两种格式：
+                - 9个数字：3x3内参矩阵按行平铺
+                - 11个数字：width height + 3x3内参矩阵按行平铺
             output_file: 输出文件路径
         """
-        intrinsics = [float(x) for x in intrinsics.strip().split()]
+        vals = [float(x) for x in intrinsics.strip().split()]
 
-        fx, _, cx, _, fy, cy, _, _, _ = intrinsics[:9]
+        if len(vals) == 11:
+            vals = vals[2:]
+        elif len(vals) != 9:
+            raise ValueError(
+                f"内参期望9或11个数字，实际{len(vals)}个: {output_file}"
+            )
+
+        fx, _, cx, _, fy, cy, _, _, _ = vals[:9]
         _x = 0
 
         # 写入文件，每行一个参数

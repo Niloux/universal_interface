@@ -316,19 +316,33 @@ class PointCloudProcessor(BaseProcessor):
         """
 
         def visualize_depth_numpy(depth, minmax=None, cmap=cv2.COLORMAP_JET):
+            """将深度图渲染为伪彩色图。
+
+            Args:
+                depth: shape (H, W)，0 表示无效深度。
+                minmax: 可选的 (min_depth, max_depth)。
+                cmap: OpenCV colormap。
+
+            Returns:
+                (vis, [mi, ma])：vis 为 (H, W, 3) 的 uint8 图。
             """
-            depth: (H, W)
-            """
-            x = np.nan_to_num(depth)  # change nan to 0
+            x = np.nan_to_num(depth).astype(np.float32)
+
             if minmax is None:
-                mi = np.min(x[x > 0])  # get minimum positive depth (ignore background)
-                ma = np.max(x)
+                pos = x[x > 0]
+                if pos.size == 0:
+                    vis = np.zeros((x.shape[0], x.shape[1], 3), dtype=np.uint8)
+                    return vis, [0.0, 0.0]
+                mi = float(np.min(pos))
+                ma = float(np.max(x))
             else:
-                mi, ma = minmax
-            x = (x - mi) / (ma - mi + 1e-8)  # normalize to 0~1
-            x = (255 * x).astype(np.uint8)
-            x_ = cv2.applyColorMap(x, cmap)
-            return x_, [mi, ma]
+                mi, ma = float(minmax[0]), float(minmax[1])
+
+            x = (x - mi) / (ma - mi + 1e-8)
+            x = np.clip(x, 0.0, 1.0)
+            x_u8 = (255.0 * x).astype(np.uint8)
+            x_vis = cv2.applyColorMap(x_u8, cmap)
+            return x_vis, [mi, ma]
 
         try:
             depth_2d = depth.reshape(image_height, image_width).astype(np.float32)

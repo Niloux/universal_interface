@@ -18,3 +18,5 @@ required_data/
 backup/
 model/
 .trae/
+
+*.tfrecord
