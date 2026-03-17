@@ -5,6 +5,34 @@ import numpy as np
 from plyfile import PlyData, PlyElement
 
 
+def resolve_child_path(parent: Path, child_name: str) -> Path:
+    """在 parent 下查找 child_name，兼容目录/文件名大小写差异。
+
+    优先使用严格同名路径；若不存在，则在 parent 的直接子项中按
+    `name.lower()` 进行匹配，返回第一个匹配到的路径。
+
+    Args:
+        parent: 父目录路径。
+        child_name: 期望的子目录/文件名（脚本内部使用的规范命名）。
+
+    Returns:
+        Path: 实际存在的子路径；若未匹配到则返回 parent/child_name。
+    """
+    candidate = parent / child_name
+    if candidate.exists():
+        return candidate
+
+    if not parent.exists():
+        return candidate
+
+    target = child_name.lower()
+    for p in parent.iterdir():
+        if p.name.lower() == target:
+            return p
+
+    return candidate
+
+
 def process_files(input_dir, output_dir, pattern, processor):
     """通用文件处理函数"""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -197,7 +225,8 @@ def pointcloud_processor(input_file, output_dir):
             return
 
         base_input = Path(input_file).parent.parent
-        extrinsics_path = base_input / "extrinsics_lidar" / f"{lidar_id}.txt"
+        extrinsics_dir = resolve_child_path(base_input, "extrinsics_lidar")
+        extrinsics_path = extrinsics_dir / f"{lidar_id}.txt"
         if extrinsics_path.exists():
             print("Lidar_T_Vehicle转换")
             E = np.loadtxt(str(extrinsics_path))
@@ -266,33 +295,40 @@ def convert_dataset(input_root: Path, required_data_root: Path) -> bool:
         input_root = Path(input_root)
         required_data_root = Path(required_data_root)
 
+        poses_dir = resolve_child_path(input_root, "poses")
+        images_dir = resolve_child_path(input_root, "images")
+        extrinsics_camera_dir = resolve_child_path(input_root, "extrinsics_camera")
+        intrinsics_camera_dir = resolve_child_path(input_root, "intrinsics_camera")
+        labels_dir = resolve_child_path(input_root, "labels")
+        pointclouds_dir = resolve_child_path(input_root, "pointclouds")
+
         process_files(
-            input_root / "poses",
+            poses_dir,
             required_data_root / "ego_pose",
             "*.txt",
             pose_processor,
         )
-        convert_images(input_root / "images", required_data_root / "images")
+        convert_images(images_dir, required_data_root / "images")
         process_files(
-            input_root / "extrinsics_camera",
+            extrinsics_camera_dir,
             required_data_root / "extrinsics",
             "*.txt",
             copy_processor,
         )
         process_files(
-            input_root / "intrinsics_camera",
+            intrinsics_camera_dir,
             required_data_root / "intrinsics",
             "*.txt",
             copy_processor,
         )
         process_files(
-            input_root / "labels",
+            labels_dir,
             required_data_root / "objects",
             "*.txt",
             labels_processor,
         )
         process_files(
-            input_root / "pointclouds",
+            pointclouds_dir,
             required_data_root / "pointclouds",
             "*.ply",
             pointcloud_processor,
